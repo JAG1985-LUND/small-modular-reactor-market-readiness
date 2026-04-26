@@ -1,5 +1,5 @@
-# Scripts
+# Outputs
 
-This folder contains the R scripts used to clean, analyse and visualise the small modular reactor market-readiness data.
+This folder contains reproducible outputs generated from the analysis scripts, including figures, tables and model-result summaries.
 
-Scripts are organised so that the main analytical dataset and figure source-data files can be used to reproduce the reported tables, figures and statistical results.
+Final publication files may differ slightly from these outputs if they are reformatted for journal submission.
