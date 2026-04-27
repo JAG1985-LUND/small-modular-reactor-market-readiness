@@ -1,11 +1,15 @@
-# small-modular-reactor-market-readiness
+# Scripts
 
-Data, code and outputs for the study “Is the world ready for small modular reactors? A longitudinal analysis of market readiness”.
+This folder contains the R scripts used to reproduce the figures, graphical abstract panel and Supplementary Table 6 outputs for the study “Is the world ready for small modular reactors? A longitudinal analysis of market readiness”.
 
-This repository contains the curated source-data files, R scripts and reproducible outputs used to generate the main figures, graphical abstract panel and Supplementary Table 6. The analysis reconstructs market-readiness indicators from the first three editions of the NEA SMR Dashboard and includes an external cross-check using an IAEA-derived small modular reactor dataset with technology-readiness-level classifications. Working files, exploratory spreadsheets and undocumented intermediate files are not included.
+## Script overview
 
-## Repository structure
+- `fig01_design_pipeline.R` — reproduces Figure 1 from the Figure 1 source-data file.
+- `fig02_start_year.R` — reproduces Figure 2 from the Figure 2 source-data file.
+- `fig03_predictors.R` — reproduces Figure 3 and associated predictor-model outputs.
+- `fig04_technology.R` — reproduces Figure 4 from the technology source-data file.
+- `fig05_regions.R` — reproduces Figure 5 from the regional source-data file.
+- `graphical_abstract_regions.R` — reproduces the graphical abstract regional-readiness panel.
+- `supplementary_table_6_iaea_trl.R` — reproduces the IAEA–TRL cross-check outputs reported in Supplementary Table 6.
 
-- `data/` — figure-specific source-data files and curated analytical datasets.
-- `scripts/` — R scripts used to reproduce figures and table outputs.
-- `outputs/` — exported figures and model-output files.
+The scripts draw on the curated source-data files in `data/` and write figure and table outputs to `outputs/`.
