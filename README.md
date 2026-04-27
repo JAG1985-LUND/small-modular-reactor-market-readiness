@@ -13,3 +13,9 @@ This repository contains the curated source-data files, R scripts and reproducib
 ## Notes
 
 The repository is intended to document the reproducible data and code archive associated with the study. Final journal-formatted figures, tables or supplementary files may differ slightly from these outputs if reformatted during submission or production.
+
+## Author
+
+Joel A. Gordon  
+International Institute for Industrial Environmental Economics (IIIEE), Lund University, Lund, Sweden  
+ORCID: https://orcid.org/0000-0001-5000-5000
