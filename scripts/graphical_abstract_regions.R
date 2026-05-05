@@ -1,3 +1,22 @@
+# Code for the manuscript Gordon, J.A.
+# Is the world ready for small modular reactors? A longitudinal analysis of market readiness
+#
+# Reproduces graphical abstract panel: SMR market readiness scores by region.
+#
+# Points show individual SMR designs grouped by region and coloured by regional category.
+# Dashed vertical lines separate regional groups.
+#
+# Working directory:
+# Set the working directory to the repository root or scripts folder before running this script.
+#
+# Required input:
+# data/graphical_abstract_source_data.xlsx
+#
+# Outputs:
+# outputs/graphical_abstract.png
+# outputs/graphical_abstract.pdf
+
+
 suppressPackageStartupMessages({
   library(readxl)
   library(dplyr)
@@ -13,9 +32,17 @@ clean_names_simple <- function(x) {
   x
 }
 
-project_dir <- "C:/Users/jo3151go/OneDrive/NEA Dashboard Dataset/small-modular-reactor-market-readiness_github"
-data_dir    <- file.path(project_dir, "data")
-out_dir     <- file.path(project_dir, "outputs")
+wd <- normalizePath(getwd(), winslash = "/", mustWork = TRUE)
+project_dir <- if (basename(wd) == "scripts") dirname(wd) else wd
+
+data_dir <- file.path(project_dir, "data")
+out_dir  <- file.path(project_dir, "outputs")
+
+dir.create(
+  out_dir,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
 
 if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
 
