@@ -1,3 +1,24 @@
+# Code for the manuscript Gordon, J.A.
+# Is the world ready for small modular reactors? A longitudinal analysis of market readiness
+#
+# Reproduces Figure 4: Technological composition of small modular reactor designs by region.
+#
+# Panels show regional shares of SMR designs by reactor cooling type, neutron spectrum,
+# fuel type and fuel enrichment category.
+#
+# Shares are calculated within each regional group.
+#
+# Working directory:
+# Set the working directory to the repository root or scripts folder before running this script.
+#
+# Required input:
+# data/fig04_technology_source_data.xlsx
+#
+# Outputs:
+# outputs/fig04_a-d.png
+# outputs/fig04_a-d.pdf
+
+
 suppressPackageStartupMessages({
   library(readxl)
   library(dplyr)
@@ -17,7 +38,14 @@ clean_names_simple <- function(x) {
   x
 }
 
-project_dir <- "C:/Users/jo3151go/OneDrive/NEA Dashboard Dataset/small-modular-reactor-market-readiness_github"
+wd <- normalizePath(getwd(), winslash = "/", mustWork = TRUE)
+project_dir <- if (basename(wd) == "scripts") dirname(wd) else wd
+
+dir.create(
+  file.path(project_dir, "outputs"),
+  recursive = TRUE,
+  showWarnings = FALSE
+)
 
 data_file <- file.path(
   project_dir,
