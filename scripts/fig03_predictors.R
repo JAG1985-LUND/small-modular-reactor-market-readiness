@@ -1,3 +1,27 @@
+# Code for the manuscript Gordon, J.A.
+# Is the world ready for small modular reactors? A longitudinal analysis of market readiness
+#
+# Reproduces Figure 3: Temporal, geopolitical and technological predictors
+# of SMR market readiness dimensions.
+#
+# Panels show odds ratios and 95% confidence intervals from univariate ordinal
+# logistic regression models relating higher market-readiness scores to
+# conceptual design start year, OECD membership, cooling type, neutron spectrum,
+# fuel type and fuel enrichment.
+#
+# Dashed vertical lines indicate the null value (odds ratio = 1).
+#
+# Working directory:
+# Set the working directory to the repository root or scripts folder before running this script.
+#
+# Required input:
+# data/fig03_predictors_source_data.xlsx
+#
+# Outputs:
+# outputs/fig03_a-f.png
+# outputs/fig03_a-f.pdf
+# outputs/fig03_predictors_model_results.csv
+
 suppressPackageStartupMessages({
   library(readxl)
   library(dplyr)
@@ -237,7 +261,14 @@ make_or_panel <- function(results_df, panel_label, panel_title, candidate_breaks
     )
 }
 
-project_dir <- "C:/Users/jo3151go/OneDrive/NEA Dashboard Dataset/small-modular-reactor-market-readiness_github"
+wd <- normalizePath(getwd(), winslash = "/", mustWork = TRUE)
+project_dir <- if (basename(wd) == "scripts") dirname(wd) else wd
+
+dir.create(
+  file.path(project_dir, "outputs"),
+  recursive = TRUE,
+  showWarnings = FALSE
+)
 
 data_file <- file.path(
   project_dir,
