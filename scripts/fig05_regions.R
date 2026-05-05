@@ -1,3 +1,26 @@
+# Code for the manuscript Gordon, J.A.
+# Is the world ready for small modular reactors? A longitudinal analysis of market readiness
+#
+# Reproduces Figure 5: Market readiness dimensions across filtered regions
+# and the global SMR design sample.
+#
+# Panels show mean readiness scores for North America, Europe, OECD Asia,
+# China, Russia and the global SMR design sample across the six dashboard
+# dimensions: financing, supply chain, fuel supply, licensing, siting and engagement.
+#
+# Higher scores indicate more advanced readiness within each dimension.
+#
+# Working directory:
+# Set the working directory to the repository root or scripts folder before running this script.
+#
+# Required input:
+# data/fig05_regions_source_data.xlsx
+#
+# Outputs:
+# outputs/fig05_regions.png
+# outputs/fig05_regions.pdf
+# outputs/fig05_regions_panel_values.csv
+
 suppressPackageStartupMessages({
   library(readxl)
   library(dplyr)
@@ -13,11 +36,27 @@ graphics.off()
 # INPUTS
 # ============================================================
 
-file_path  <- "C:/Users/jo3151go/OneDrive/NEA Dashboard Dataset/small-modular-reactor-market-readiness_github/data/fig05_regions_source_data.xlsx"
-sheet_name <- 1
-out_dir    <- "C:/Users/jo3151go/OneDrive/NEA Dashboard Dataset/small-modular-reactor-market-readiness_github/outputs"
+wd <- normalizePath(getwd(), winslash = "/", mustWork = TRUE)
+project_dir <- if (basename(wd) == "scripts") dirname(wd) else wd
 
-if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+file_path <- file.path(
+  project_dir,
+  "data",
+  "fig05_regions_source_data.xlsx"
+)
+
+sheet_name <- 1
+
+out_dir <- file.path(
+  project_dir,
+  "outputs"
+)
+
+dir.create(
+  out_dir,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
 
 # ============================================================
 # HELPERS
@@ -61,7 +100,6 @@ region_order <- c(
 )
 
 panel_order <- c(region_order, "Global")
-panel_tags  <- c("a", "b", "c", "d", "e", "f")
 
 # ============================================================
 # LOAD DATA
