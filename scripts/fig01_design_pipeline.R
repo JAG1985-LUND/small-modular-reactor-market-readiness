@@ -1,3 +1,21 @@
+# Code for the manuscript Gordon, J.A.
+# Is the world ready for small modular reactors? A longitudinal analysis of market readiness
+#
+# Reproduces Figure 1: Evolution of the SMR design pipeline and mean market readiness
+# across the first three editions of the NEA SMR Dashboard.
+#
+# Panels a-c show the number of SMR designs by region in Editions 1, 2 and 3.
+# Panels d-f show the number of SMR designs by reactor cooling type.
+# Panels g-i show mean market-readiness scores for financing, supply chain,
+# fuel supply, licensing, siting and engagement.
+#
+# Required input:
+# data/fig01_design_pipeline_source_data.xlsx
+#
+# Outputs:
+# outputs/figure_01/fig01_a-i.png
+# outputs/figure_01/fig01_a-i.pdf
+
 suppressPackageStartupMessages({
   library(readxl)
   library(dplyr)
@@ -18,15 +36,21 @@ data_file <- file.path(
   "fig01_design_pipeline_source_data.xlsx"
 )
 
-png_out <- file.path(
+output_dir <- file.path(
   project_dir,
   "outputs",
+  "figure_01"
+)
+
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+png_out <- file.path(
+  output_dir,
   "fig01_a-i.png"
 )
 
 pdf_out <- file.path(
-  project_dir,
-  "outputs",
+  output_dir,
   "fig01_a-i.pdf"
 )
 
