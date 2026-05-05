@@ -1,3 +1,26 @@
+# Code for the manuscript Gordon, J.A.
+# Is the world ready for small modular reactors? A longitudinal analysis of market readiness
+#
+# Reproduces Figure 2: Aggregate SMR market readiness by conceptual design start year.
+#
+# Panel a shows the relationship between mean market readiness and conceptual design
+# start year across the full sample of assessed SMR designs from 1984 to 2025.
+# Panel b restricts the sample to designs initiated between 2009 and 2018.
+# Panel c restricts the sample to designs initiated between 2019 and 2025.
+#
+# Points represent individual SMR designs, the blue line shows the fitted linear trend,
+# and the shaded area indicates the 95% confidence interval.
+#
+# Working directory:
+# Set the working directory to the repository root before running this script.
+#
+# Required input:
+# data/fig02_start_year_source_data.xlsx
+#
+# Outputs:
+# outputs/fig02_a-c.png
+# outputs/fig02_a-c.pdf
+
 suppressPackageStartupMessages({
   library(readxl)
   library(dplyr)
@@ -14,7 +37,8 @@ clean_names_simple <- function(x) {
   x
 }
 
-project_dir <- "C:/Users/jo3151go/OneDrive/NEA Dashboard Dataset/small-modular-reactor-market-readiness_github"
+# Working directory should be set to the repository root before running this script.
+project_dir <- getwd()
 
 data_file <- file.path(
   project_dir,
