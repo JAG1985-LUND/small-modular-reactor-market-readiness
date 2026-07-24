@@ -4,11 +4,12 @@ This folder contains the R scripts used to reproduce the figures, graphical abst
 
 ## Script overview
 
-- `fig01_design_pipeline.R` — reproduces Figure 1 from the Figure 1 source-data file.
-- `fig02_start_year.R` — reproduces Figure 2 from the Figure 2 source-data file.
-- `fig03_predictors.R` — reproduces Figure 3 and associated predictor-model outputs.
-- `fig04_technology.R` — reproduces Figure 4 from the technology source-data file.
-- `fig05_regions.R` — reproduces Figure 5 from the regional source-data file.
+- `fig01_IAEA_catalogue.R` — reproduces Figure 1 from the Figure 1 source-data file.
+- `fig02_design_pipeline.R` — reproduces Figure 2 from the Figure 2 source-data file.
+- `fig03_start_year.R` — reproduces Figure 3 from the Figure 3 source-data file.
+- `fig04_predictors.R` — reproduces Figure 4 and associated predictor-model outputs from the Figure 4 source-data file.
+- `fig05_technology.R` — reproduces Figure 5 from the Figure 5 source-data file.
+- `figS1_regions.R` — reproduces Figure S1 from the regional source-data file.
 - `graphical_abstract_regions.R` — reproduces the graphical abstract regional-readiness panel.
 - `supplementary_table_6_iaea_trl.R` — reproduces the IAEA–TRL cross-check outputs reported in Supplementary Table 6.
 
