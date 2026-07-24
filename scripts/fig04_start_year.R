@@ -1,25 +1,33 @@
+# ============================================================
 # Code for the manuscript Gordon, J.A.
-# Is the world ready for small modular reactors? A longitudinal analysis of market readiness
 #
-# Reproduces Figure 2: Aggregate SMR market readiness by conceptual design start year.
+# From pipeline growth to first-of-a-kind deployment:
+# market readiness across the global small modular reactor landscape
 #
-# Panel a shows the relationship between mean market readiness and conceptual design
-# start year across the full sample of assessed SMR designs from 1984 to 2025.
-# Panel b restricts the sample to designs initiated between 2009 and 2018.
-# Panel c restricts the sample to designs initiated between 2019 and 2025.
+# Reproduces Figure 3: Aggregate SMR market readiness by
+# conceptual design start year.
 #
-# Points represent individual SMR designs, the blue line shows the fitted linear trend,
-# and the shaded area indicates the 95% confidence interval.
+# Panel a shows the relationship between mean market readiness
+# and conceptual design start year across the full sample of
+# assessed SMR designs from 1984 to 2025.
 #
-# Working directory:
-# Set the working directory to the repository root before running this script.
+# Panel b restricts the sample to designs initiated between
+# 2009 and 2018.
+#
+# Panel c restricts the sample to designs initiated between
+# 2019 and 2025.
+#
+# Points represent individual SMR designs, the blue line shows
+# the fitted linear trend, and the shaded area indicates the
+# 95% confidence interval.
 #
 # Required input:
-# data/fig02_start_year_source_data.xlsx
+# data/fig03_start_year_source_data.xlsx
 #
 # Outputs:
-# outputs/fig02_a-c.png
-# outputs/fig02_a-c.pdf
+# outputs/figure_03/fig03_a-c.png
+# outputs/figure_03/fig03_a-c.pdf
+# ============================================================
 
 suppressPackageStartupMessages({
   library(readxl)
@@ -31,58 +39,208 @@ suppressPackageStartupMessages({
 rm(list = ls())
 graphics.off()
 
+# ============================================================
+# 1. HELPER FUNCTIONS
+# ============================================================
+
 clean_names_simple <- function(x) {
   x <- tolower(gsub("[^A-Za-z0-9]+", "_", x))
   x <- gsub("^_|_$", "", x)
   x
 }
 
-# Working directory should be set to the repository root before running this script.
-project_dir <- getwd()
+normalise_existing <- function(x) {
+  x <- x[!is.na(x) & nzchar(x)]
+  unique(normalizePath(x, winslash = "/", mustWork = FALSE))
+}
+
+find_repo_root <- function(input_filename) {
+
+  candidates <- character(0)
+
+  # A. Optional environment-variable override
+  env_root <- Sys.getenv("SMR_REPO_ROOT", unset = "")
+  if (nzchar(env_root)) {
+    candidates <- c(candidates, env_root)
+  }
+
+  # B. Directory containing the active RStudio script
+  if (
+    requireNamespace("rstudioapi", quietly = TRUE) &&
+    rstudioapi::isAvailable()
+  ) {
+    active_file <- tryCatch(
+      rstudioapi::getActiveDocumentContext()$path,
+      error = function(e) ""
+    )
+
+    if (nzchar(active_file)) {
+      script_dir <- dirname(active_file)
+      candidates <- c(
+        candidates,
+        script_dir,
+        file.path(script_dir, "..")
+      )
+    }
+  }
+
+  # C. Current working directory and several parent directories
+  current_dir <- getwd()
+
+  for (i in 0:6) {
+    candidates <- c(candidates, current_dir)
+    current_dir <- dirname(current_dir)
+  }
+
+  # D. User's established local repository path
+  # This fallback makes the script run even when RStudio's working
+  # directory is elsewhere. It does not prevent portability because
+  # the repository-relative checks above are attempted first.
+  candidates <- c(
+    candidates,
+    "C:/Users/jo3151go/OneDrive/NEA Dashboard Dataset/small-modular-reactor-market-readiness_github"
+  )
+
+  candidates <- normalise_existing(candidates)
+
+  matches <- vapply(
+    candidates,
+    function(root) {
+      file.exists(file.path(root, "data", input_filename))
+    },
+    logical(1)
+  )
+
+  if (!any(matches)) {
+    stop(
+      paste0(
+        "The Figure 3 source-data workbook could not be found.\n\n",
+        "Expected repository-relative file:\n",
+        "data/", input_filename, "\n\n",
+        "Current working directory:\n",
+        normalizePath(getwd(), winslash = "/", mustWork = FALSE), "\n\n",
+        "Either place this script in the repository's scripts folder, ",
+        "run it from the repository root, or set the SMR_REPO_ROOT ",
+        "environment variable to the repository path."
+      )
+    )
+  }
+
+  candidates[which(matches)[1]]
+}
+
+# ============================================================
+# 2. LOCATE REPOSITORY AND DEFINE PATHS
+# ============================================================
+
+input_filename <- "fig03_start_year_source_data.xlsx"
+
+project_dir <- find_repo_root(input_filename)
 
 data_file <- file.path(
   project_dir,
   "data",
-  "fig02_start_year_source_data.xlsx"
+  input_filename
+)
+
+output_dir <- file.path(
+  project_dir,
+  "outputs",
+  "figure_03"
+)
+
+dir.create(
+  output_dir,
+  recursive = TRUE,
+  showWarnings = FALSE
 )
 
 png_out <- file.path(
-  project_dir,
-  "outputs",
-  "fig02_a-c.png"
+  output_dir,
+  "fig03_a-c.png"
 )
 
 pdf_out <- file.path(
-  project_dir,
-  "outputs",
-  "fig02_a-c.pdf"
+  output_dir,
+  "fig03_a-c.pdf"
 )
 
-df <- read_excel(
-  data_file,
-  sheet = "fig02"
+message("Repository root: ", project_dir)
+message("Input workbook: ", data_file)
+
+# ============================================================
+# 3. LOAD SOURCE DATA
+# ============================================================
+
+available_sheets <- readxl::excel_sheets(data_file)
+
+sheet_name <- if ("fig03" %in% available_sheets) {
+  "fig03"
+} else if ("fig02" %in% available_sheets) {
+  "fig02"
+} else {
+  available_sheets[1]
+}
+
+fig03_data <- readxl::read_excel(
+  path = data_file,
+  sheet = sheet_name
 )
 
-names(df) <- clean_names_simple(names(df))
+names(fig03_data) <- clean_names_simple(names(fig03_data))
 
-plot_df <- df %>%
+required_columns <- c(
+  "design",
+  "cd_start",
+  "mean_readiness"
+)
+
+missing_columns <- setdiff(
+  required_columns,
+  names(fig03_data)
+)
+
+if (length(missing_columns) > 0) {
+  stop(
+    paste0(
+      "The Figure 3 source-data workbook is missing these columns:\n",
+      paste(missing_columns, collapse = ", ")
+    )
+  )
+}
+
+message(
+  "Loaded ",
+  nrow(fig03_data),
+  " rows from worksheet '",
+  sheet_name,
+  "'."
+)
+
+# ============================================================
+# 4. CLEAN AND PREPARE DATA
+# ============================================================
+
+plot_df <- fig03_data %>%
   transmute(
     design = as.character(design),
     cd_start = suppressWarnings(as.numeric(cd_start)),
     mean_readiness = suppressWarnings(as.numeric(mean_readiness))
   ) %>%
-  filter(!is.na(cd_start), !is.na(mean_readiness)) %>%
-  arrange(cd_start, design)
+  filter(
+    !is.na(cd_start),
+    !is.na(mean_readiness)
+  ) %>%
+  arrange(
+    cd_start,
+    design
+  )
 
-df_a <- plot_df
+if (nrow(plot_df) == 0) {
+  stop("No valid observations remained after data cleaning.")
+}
 
-df_b <- plot_df %>%
-  filter(cd_start >= 2009, cd_start <= 2018)
-
-df_c <- plot_df %>%
-  filter(cd_start >= 2019, cd_start <= 2025)
-
-df_a <- df_a %>%
+df_a <- plot_df %>%
   mutate(
     cohort = case_when(
       cd_start >= 2009 & cd_start <= 2018 ~ "B",
@@ -90,6 +248,30 @@ df_a <- df_a %>%
       TRUE ~ "Other"
     )
   )
+
+df_b <- plot_df %>%
+  filter(
+    cd_start >= 2009,
+    cd_start <= 2018
+  )
+
+df_c <- plot_df %>%
+  filter(
+    cd_start >= 2019,
+    cd_start <= 2025
+  )
+
+if (nrow(df_b) < 2) {
+  stop("Panel b contains fewer than two valid observations.")
+}
+
+if (nrow(df_c) < 2) {
+  stop("Panel c contains fewer than two valid observations.")
+}
+
+# ============================================================
+# 5. COLOURS AND THEME
+# ============================================================
 
 col_other <- "black"
 col_b     <- "#C97A2B"
@@ -101,39 +283,71 @@ theme_panel <- theme_minimal(base_size = 11) +
   theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
-    axis.line.x = element_line(colour = "grey35", linewidth = 0.3),
-    axis.line.y = element_line(colour = "grey35", linewidth = 0.3),
-    axis.ticks = element_line(colour = "grey35", linewidth = 0.3),
-    axis.text.x = element_text(size = 11, colour = "black"),
-    axis.text.y = element_text(size = 11, colour = "black"),
-    axis.title.x = element_text(size = 11, colour = "black"),
-    axis.title.y = element_text(size = 11, colour = "black"),
+    axis.line.x = element_line(
+      colour = "grey35",
+      linewidth = 0.3
+    ),
+    axis.line.y = element_line(
+      colour = "grey35",
+      linewidth = 0.3
+    ),
+    axis.ticks = element_line(
+      colour = "grey35",
+      linewidth = 0.3
+    ),
+    axis.text.x = element_text(
+      size = 11,
+      colour = "black"
+    ),
+    axis.text.y = element_text(
+      size = 11,
+      colour = "black"
+    ),
+    axis.title.x = element_text(
+      size = 11,
+      colour = "black"
+    ),
+    axis.title.y = element_text(
+      size = 11,
+      colour = "black"
+    ),
     plot.title = element_blank(),
     legend.position = "none",
     plot.margin = margin(4, 6, 4, 6)
   )
 
-p_a <- ggplot(df_a, aes(x = cd_start, y = mean_readiness)) +
+# ============================================================
+# 6. PANEL A: FULL SAMPLE
+# ============================================================
+
+p_a <- ggplot(
+  df_a,
+  aes(
+    x = cd_start,
+    y = mean_readiness
+  )
+) +
   geom_point(
-    data = subset(df_a, cohort == "Other"),
+    data = filter(df_a, cohort == "Other"),
     colour = col_other,
     size = 2.4,
     alpha = 0.85
   ) +
   geom_point(
-    data = subset(df_a, cohort == "B"),
+    data = filter(df_a, cohort == "B"),
     colour = col_b,
     size = 2.4,
     alpha = 0.95
   ) +
   geom_point(
-    data = subset(df_a, cohort == "C"),
+    data = filter(df_a, cohort == "C"),
     colour = col_c,
     size = 2.4,
     alpha = 0.95
   ) +
   geom_smooth(
     method = "lm",
+    formula = y ~ x,
     se = TRUE,
     colour = line_col,
     fill = band_fill,
@@ -153,7 +367,17 @@ p_a <- ggplot(df_a, aes(x = cd_start, y = mean_readiness)) +
   ) +
   theme_panel
 
-p_b <- ggplot(df_b, aes(x = cd_start, y = mean_readiness)) +
+# ============================================================
+# 7. PANEL B: 2009-2018
+# ============================================================
+
+p_b <- ggplot(
+  df_b,
+  aes(
+    x = cd_start,
+    y = mean_readiness
+  )
+) +
   geom_point(
     size = 2.4,
     colour = col_b,
@@ -161,6 +385,7 @@ p_b <- ggplot(df_b, aes(x = cd_start, y = mean_readiness)) +
   ) +
   geom_smooth(
     method = "lm",
+    formula = y ~ x,
     se = TRUE,
     colour = line_col,
     fill = band_fill,
@@ -180,7 +405,17 @@ p_b <- ggplot(df_b, aes(x = cd_start, y = mean_readiness)) +
   ) +
   theme_panel
 
-p_c <- ggplot(df_c, aes(x = cd_start, y = mean_readiness)) +
+# ============================================================
+# 8. PANEL C: 2019-2025
+# ============================================================
+
+p_c <- ggplot(
+  df_c,
+  aes(
+    x = cd_start,
+    y = mean_readiness
+  )
+) +
   geom_point(
     size = 2.4,
     colour = col_c,
@@ -188,6 +423,7 @@ p_c <- ggplot(df_c, aes(x = cd_start, y = mean_readiness)) +
   ) +
   geom_smooth(
     method = "lm",
+    formula = y ~ x,
     se = TRUE,
     colour = line_col,
     fill = band_fill,
@@ -209,6 +445,10 @@ p_c <- ggplot(df_c, aes(x = cd_start, y = mean_readiness)) +
   theme(
     axis.title.y = element_text(colour = "white")
   )
+
+# ============================================================
+# 9. COMBINE PANELS
+# ============================================================
 
 bottom_row <- plot_grid(
   p_b,
@@ -257,6 +497,10 @@ combined_plot <- ggdraw(combined_plot) +
 
 print(combined_plot)
 
+# ============================================================
+# 10. SAVE OUTPUTS
+# ============================================================
+
 ggsave(
   filename = png_out,
   plot = combined_plot,
@@ -273,5 +517,44 @@ ggsave(
   width = 180,
   height = 210,
   units = "mm",
+  device = grDevices::cairo_pdf,
   bg = "white"
 )
+
+# ============================================================
+# 11. VERIFY OUTPUTS
+# ============================================================
+
+if (!file.exists(png_out)) {
+  stop(
+    paste0(
+      "The PNG output was not created:\n",
+      png_out
+    )
+  )
+}
+
+if (!file.exists(pdf_out)) {
+  stop(
+    paste0(
+      "The PDF output was not created:\n",
+      pdf_out
+    )
+  )
+}
+
+message("")
+message("==============================================")
+message("FIGURE 3 COMPLETE")
+message("==============================================")
+message("Repository root: ", project_dir)
+message("Input: ", data_file)
+message("Worksheet: ", sheet_name)
+message("Observations, full sample: ", nrow(df_a))
+message("Observations, 2009-2018: ", nrow(df_b))
+message("Observations, 2019-2025: ", nrow(df_c))
+message("PNG: ", png_out)
+message("PDF: ", pdf_out)
+message("==============================================")
+
+combined_plot
