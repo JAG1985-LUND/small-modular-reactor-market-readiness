@@ -1,6 +1,6 @@
 # Scripts
 
-This folder contains the R scripts used to reproduce the figures, graphical abstract panel and Supplementary Table 6 outputs for the study “Is the world ready for small modular reactors? A longitudinal analysis of market readiness”.
+This folder contains the R scripts used to reproduce the figures, graphical abstract panel and Supplementary Table 6 outputs for the study “From pipeline growth to first-of-a-kind deployment: market readiness across the global small modular reactor landscape”.
 
 ## Script overview
 
