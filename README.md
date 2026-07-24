@@ -1,6 +1,6 @@
 # small-modular-reactor-market-readiness
 
-Data, code and outputs for the study “Is the world ready for small modular reactors? A longitudinal analysis of market readiness”.
+Data, code and outputs for the study “From pipeline growth to first-of-a-kind deployment: market readiness across the global small modular reactor landscape”.
 
 This repository contains the curated source-data files, R scripts and reproducible outputs used to generate the main figures, graphical abstract panel and Supplementary Table 6. The analysis reconstructs small modular reactor market-readiness indicators from the first three editions of the NEA SMR Dashboard and includes an external cross-check using an IAEA-derived small modular reactor dataset with technology-readiness-level classifications. Working files, exploratory spreadsheets and undocumented intermediate files are not included.
 
