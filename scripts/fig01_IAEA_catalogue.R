@@ -4,22 +4,30 @@
 # From pipeline growth to first-of-a-kind deployment:
 # market readiness across the global small modular reactor landscape
 #
-# Reproduces Figure 1:
-# Panel a shows the number of reactor designs by year, split between
-# small modular reactors and microreactors.
+# Reproduces Figure 1.
+#
+# Panel a shows the number of reactor designs by catalogue year,
+# divided between small modular reactors and microreactors.
+#
 # Panel b shows the development-phase composition of small modular
-# reactor designs by year.
+# reactor designs by catalogue year.
+#
 # Panel c shows the development-phase composition of microreactor
-# designs by year.
+# designs by catalogue year.
+#
+# Working directory:
+# Run this script from either:
+#   1. the repository root; or
+#   2. the repository's scripts/ directory.
 #
 # Required input:
-# fig01_pipeline_and_phase_panels_source_data.xlsx
+# data/fig01_pipeline_and_phase_panels_source_data.xlsx
 #
 # Figure outputs:
 # outputs/fig01_pipeline_and_phase_panels.png
 # outputs/fig01_pipeline_and_phase_panels.pdf
 #
-# Source-data outputs:
+# Figure source-data outputs:
 # data/fig01_panel_a_source_data.csv
 # data/fig01_panel_b_source_data.csv
 # data/fig01_panel_c_source_data.csv
@@ -29,6 +37,11 @@
 # data/fig01_descriptives_phase_by_reactor_type_year.csv
 # data/fig01_descriptives_phase_by_reactor_type_year_wide.csv
 # data/fig01_descriptives_summary.csv
+# ============================================================
+
+
+# ============================================================
+# 1. LOAD PACKAGES AND RESET SESSION
 # ============================================================
 
 suppressPackageStartupMessages({
@@ -46,37 +59,144 @@ suppressPackageStartupMessages({
 rm(list = ls())
 graphics.off()
 
+
 # ============================================================
-# 1. PATHS
+# 2. LOCATE THE REPOSITORY
 # ============================================================
 
-base_dir <- "C:/Users/jo3151go/OneDrive/Energy Strategy Reviews"
+get_active_script_path <- function() {
 
-input_candidates <- c(
-  file.path(
-    base_dir,
-    "fig01_pipeline_and_phase_panels_source_data.xlsx"
-  ),
-  file.path(
-    base_dir,
-    "fig01_pipeline_and_phase_panels_source_data.xlsx.xlsx"
+  source_path <- tryCatch(
+    {
+      path <- sys.frames()[[1]]$ofile
+
+      if (is.null(path)) {
+        ""
+      } else {
+        normalizePath(
+          path,
+          winslash = "/",
+          mustWork = FALSE
+        )
+      }
+    },
+    error = function(e) ""
   )
-)
 
-input_file <- input_candidates[file.exists(input_candidates)][1]
+  if (nzchar(source_path)) {
+    return(source_path)
+  }
 
-if (length(input_file) == 0 || is.na(input_file)) {
-  stop(
-    paste0(
-      "Figure 1 input workbook was not found.\n",
-      "Expected one of the following files:\n",
-      paste(input_candidates, collapse = "\n")
+  if (
+    requireNamespace("rstudioapi", quietly = TRUE) &&
+      rstudioapi::isAvailable()
+  ) {
+
+    rstudio_path <- tryCatch(
+      rstudioapi::getActiveDocumentContext()$path,
+      error = function(e) ""
     )
-  )
+
+    if (nzchar(rstudio_path)) {
+      return(
+        normalizePath(
+          rstudio_path,
+          winslash = "/",
+          mustWork = FALSE
+        )
+      )
+    }
+  }
+
+  ""
 }
 
-output_dir <- file.path(base_dir, "outputs")
-data_dir   <- file.path(base_dir, "data")
+
+find_repository_root <- function(input_filename) {
+
+  current_dir <- normalizePath(
+    getwd(),
+    winslash = "/",
+    mustWork = TRUE
+  )
+
+  script_path <- get_active_script_path()
+
+  candidate_dirs <- c(
+    current_dir,
+    dirname(current_dir)
+  )
+
+  if (nzchar(script_path)) {
+
+    script_dir <- dirname(script_path)
+
+    candidate_dirs <- c(
+      candidate_dirs,
+      script_dir,
+      dirname(script_dir)
+    )
+  }
+
+  candidate_dirs <- unique(
+    normalizePath(
+      candidate_dirs,
+      winslash = "/",
+      mustWork = FALSE
+    )
+  )
+
+  candidate_files <- file.path(
+    candidate_dirs,
+    "data",
+    input_filename
+  )
+
+  matched_index <- which(
+    file.exists(candidate_files)
+  )
+
+  if (length(matched_index) == 0) {
+
+    stop(
+      paste0(
+        "Figure 1 input workbook was not found.\n\n",
+        "Expected repository-relative path:\n",
+        "data/",
+        input_filename,
+        "\n\n",
+        "Run the script from the repository root or the scripts/ directory.\n\n",
+        "Locations checked:\n",
+        paste(candidate_files, collapse = "\n")
+      )
+    )
+  }
+
+  candidate_dirs[matched_index[1]]
+}
+
+
+input_filename <- "fig01_pipeline_and_phase_panels_source_data.xlsx"
+
+project_dir <- find_repository_root(
+  input_filename
+)
+
+input_file <- file.path(
+  project_dir,
+  "data",
+  input_filename
+)
+
+output_dir <- file.path(
+  project_dir,
+  "outputs"
+)
+
+data_dir <- file.path(
+  project_dir,
+  "data"
+)
 
 dir.create(
   output_dir,
@@ -90,30 +210,86 @@ dir.create(
   showWarnings = FALSE
 )
 
+message("Repository root: ", project_dir)
 message("Input workbook: ", input_file)
+message("Figure output directory: ", output_dir)
+message("Source-data output directory: ", data_dir)
+
 
 # ============================================================
-# 2. EXPORT SETTINGS
+# 3. DEFINE OUTPUT FILES
+# ============================================================
+
+png_output <- file.path(
+  output_dir,
+  "fig01_pipeline_and_phase_panels.png"
+)
+
+pdf_output <- file.path(
+  output_dir,
+  "fig01_pipeline_and_phase_panels.pdf"
+)
+
+panel_a_output <- file.path(
+  data_dir,
+  "fig01_panel_a_source_data.csv"
+)
+
+panel_b_output <- file.path(
+  data_dir,
+  "fig01_panel_b_source_data.csv"
+)
+
+panel_c_output <- file.path(
+  data_dir,
+  "fig01_panel_c_source_data.csv"
+)
+
+reactor_type_output <- file.path(
+  data_dir,
+  "fig01_descriptives_reactor_type_by_year.csv"
+)
+
+phase_long_output <- file.path(
+  data_dir,
+  "fig01_descriptives_phase_by_reactor_type_year.csv"
+)
+
+phase_wide_output <- file.path(
+  data_dir,
+  "fig01_descriptives_phase_by_reactor_type_year_wide.csv"
+)
+
+summary_output <- file.path(
+  data_dir,
+  "fig01_descriptives_summary.csv"
+)
+
+
+# ============================================================
+# 4. EXPORT SETTINGS
 # ============================================================
 
 SAVE_W_MM <- 180
 SAVE_H_MM <- 180
-SAVE_DPI  <- 600
+SAVE_DPI <- 600
+
 
 # ============================================================
-# 3. TYPOGRAPHY
+# 5. TYPOGRAPHY
 # ============================================================
 
-BASE_SIZE         <- 8
-AXIS_TEXT_SIZE    <- 8
-AXIS_TITLE_SIZE   <- 8
-LEGEND_TEXT_SIZE  <- 8
+BASE_SIZE <- 8
+AXIS_TEXT_SIZE <- 8
+AXIS_TITLE_SIZE <- 8
+LEGEND_TEXT_SIZE <- 8
 LEGEND_TITLE_SIZE <- 8
-TITLE_SIZE        <- 8
-TAG_SIZE          <- 12
+TITLE_SIZE <- 8
+TAG_SIZE <- 12
+
 
 # ============================================================
-# 4. DISPLAY ORDER AND COLOURS
+# 6. DISPLAY ORDER AND COLOURS
 # ============================================================
 
 phase_order <- c(
@@ -127,11 +303,11 @@ phase_order <- c(
 
 phase_cols <- c(
   "Conceptual design" = "#FDE0D2",
-  "Basic design"      = "#F4A582",
-  "Detailed design"   = "#D6604D",
-  "Licensing"         = "#D1E5F0",
-  "Construction"      = "#92C5DE",
-  "Operational"       = "#4393C3"
+  "Basic design" = "#F4A582",
+  "Detailed design" = "#D6604D",
+  "Licensing" = "#D1E5F0",
+  "Construction" = "#92C5DE",
+  "Operational" = "#4393C3"
 )
 
 classification_order <- c(
@@ -141,15 +317,20 @@ classification_order <- c(
 
 classification_cols <- c(
   "Small modular reactor" = "#4C9A5F",
-  "Microreactor"          = "#6A6A6A"
+  "Microreactor" = "#6A6A6A"
 )
 
+
 # ============================================================
-# 5. HELPER FUNCTIONS
+# 7. HELPER FUNCTIONS
 # ============================================================
 
-make_stack_data <- function(data, stack_col, stack_levels) {
-  
+make_stack_data <- function(
+  data,
+  stack_col,
+  stack_levels
+) {
+
   data %>%
     dplyr::mutate(
       stack_group = factor(
@@ -161,7 +342,9 @@ make_stack_data <- function(data, stack_col, stack_levels) {
       publication_year,
       stack_group
     ) %>%
-    dplyr::group_by(publication_year) %>%
+    dplyr::group_by(
+      publication_year
+    ) %>%
     dplyr::mutate(
       ymin = dplyr::lag(
         cumsum(n_reactors),
@@ -172,16 +355,17 @@ make_stack_data <- function(data, stack_col, stack_levels) {
     dplyr::ungroup()
 }
 
+
 tag_panel <- function(
-    plot,
-    tag,
-    x = 0.015,
-    y = 0.99
+  plot,
+  tag,
+  x = 0.015,
+  y = 0.99
 ) {
-  
+
   cowplot::ggdraw(plot) +
     cowplot::draw_plot_label(
-      tag,
+      label = tag,
       x = x,
       y = y,
       hjust = 0,
@@ -191,6 +375,33 @@ tag_panel <- function(
     )
 }
 
+
+get_year_value <- function(
+  data,
+  year,
+  variable
+) {
+
+  value <- data %>%
+    dplyr::filter(
+      publication_year == year
+    ) %>%
+    dplyr::pull(
+      {{ variable }}
+    )
+
+  if (length(value) == 0) {
+    return(NA_real_)
+  }
+
+  as.numeric(value[1])
+}
+
+
+# ============================================================
+# 8. COMMON FIGURE THEME
+# ============================================================
+
 base_theme <- ggplot2::theme_classic(
   base_size = BASE_SIZE
 ) +
@@ -198,105 +409,157 @@ base_theme <- ggplot2::theme_classic(
     text = ggplot2::element_text(
       colour = "black"
     ),
+
     axis.text.x = ggplot2::element_text(
       size = AXIS_TEXT_SIZE,
       colour = "grey20"
     ),
+
     axis.text.y = ggplot2::element_text(
       size = AXIS_TEXT_SIZE,
       colour = "grey20"
     ),
+
     axis.title.x = ggplot2::element_text(
       size = AXIS_TITLE_SIZE,
       colour = "black",
       margin = ggplot2::margin(t = 4)
     ),
+
     axis.title.y = ggplot2::element_text(
       size = AXIS_TITLE_SIZE,
       colour = "black"
     ),
+
     axis.line.x = ggplot2::element_line(
       colour = "grey35",
       linewidth = 0.3
     ),
+
     axis.line.y = ggplot2::element_line(
       colour = "grey35",
       linewidth = 0.3
     ),
+
     axis.ticks = ggplot2::element_line(
       colour = "grey35",
       linewidth = 0.3
     ),
+
     legend.text = ggplot2::element_text(
       size = LEGEND_TEXT_SIZE,
       colour = "black"
     ),
+
     legend.title = ggplot2::element_text(
       size = LEGEND_TITLE_SIZE,
       colour = "black"
     ),
+
     legend.key.height = grid::unit(
       0.28,
       "cm"
     ),
+
     legend.key.width = grid::unit(
       0.28,
       "cm"
     ),
+
     legend.spacing.x = grid::unit(
       1.5,
       "mm"
     ),
+
     legend.spacing.y = grid::unit(
       0.02,
       "cm"
     ),
+
     legend.margin = ggplot2::margin(
       0,
       0,
       0,
       0
     ),
+
     legend.box.margin = ggplot2::margin(
       0,
       0,
       0,
       0
     ),
+
     legend.background = ggplot2::element_rect(
       fill = "white",
       colour = NA
     ),
+
     plot.title = ggplot2::element_text(
       hjust = 0.5,
       size = TITLE_SIZE,
       face = "plain",
       margin = ggplot2::margin(b = 2)
     ),
+
     plot.margin = ggplot2::margin(
       t = 4,
       r = 6,
       b = 4,
       l = 4
     ),
+
     plot.background = ggplot2::element_rect(
       fill = "white",
       colour = NA
     ),
+
     panel.background = ggplot2::element_rect(
       fill = "white",
       colour = NA
     )
   )
 
+
 # ============================================================
-# 6. LOAD SOURCE DATA
+# 9. LOAD SOURCE DATA
 # ============================================================
+
+available_sheets <- readxl::excel_sheets(
+  input_file
+)
+
+if (length(available_sheets) == 0) {
+  stop(
+    "The Figure 1 input workbook contains no worksheets."
+  )
+}
+
+sheet_name <- if ("fig01" %in% available_sheets) {
+  "fig01"
+} else {
+  available_sheets[1]
+}
 
 source_data <- readxl::read_excel(
   path = input_file,
-  sheet = 1
+  sheet = sheet_name
 )
+
+message(
+  "Loaded ",
+  nrow(source_data),
+  " rows and ",
+  ncol(source_data),
+  " columns from worksheet '",
+  sheet_name,
+  "'."
+)
+
+
+# ============================================================
+# 10. VALIDATE SOURCE DATA
+# ============================================================
 
 required_columns <- c(
   "publication_year",
@@ -310,24 +573,27 @@ missing_columns <- setdiff(
 )
 
 if (length(missing_columns) > 0) {
+
   stop(
     paste0(
-      "The input workbook is missing the following required columns: ",
-      paste(missing_columns, collapse = ", ")
+      "The Figure 1 input workbook is missing the following required columns:\n",
+      paste(
+        missing_columns,
+        collapse = ", "
+      )
     )
   )
 }
 
-message(
-  "Source data loaded: ",
-  nrow(source_data),
-  " rows and ",
-  ncol(source_data),
-  " columns."
-)
+if (nrow(source_data) == 0) {
+  stop(
+    "The Figure 1 input workbook contains no observations."
+  )
+}
+
 
 # ============================================================
-# 7. CLEAN AND PREPARE DATA
+# 11. CLEAN AND PREPARE SOURCE DATA
 # ============================================================
 
 plot_data <- source_data %>%
@@ -336,15 +602,18 @@ plot_data <- source_data %>%
       where(is.character),
       ~ stringr::str_squish(.x)
     ),
+
     publication_year = suppressWarnings(
       as.integer(publication_year)
     ),
+
     classification = classification %>%
       stringr::str_to_lower() %>%
       stringr::str_replace_all(
         "[ -]+",
         "_"
       ),
+
     development_phase_recoded =
       development_phase_recoded %>%
       stringr::str_to_lower() %>%
@@ -366,37 +635,40 @@ plot_data <- source_data %>%
     classification_label = dplyr::case_when(
       classification == "small_modular_reactor" ~
         "Small modular reactor",
-      
+
       classification == "micro_reactor" ~
         "Microreactor",
-      
+
       TRUE ~ NA_character_
     ),
+
     phase_label = dplyr::case_when(
       development_phase_recoded == "conceptual_design" ~
         "Conceptual design",
-      
+
       development_phase_recoded == "basic_design" ~
         "Basic design",
-      
+
       development_phase_recoded == "detailed_design" ~
         "Detailed design",
-      
+
       development_phase_recoded == "licensing" ~
         "Licensing",
-      
+
       development_phase_recoded == "construction" ~
         "Construction",
-      
+
       development_phase_recoded == "operational" ~
         "Operational",
-      
+
       TRUE ~ NA_character_
     ),
+
     classification_label = factor(
       classification_label,
       levels = classification_order
     ),
+
     phase_label = factor(
       phase_label,
       levels = phase_order
@@ -405,7 +677,7 @@ plot_data <- source_data %>%
 
 if (nrow(plot_data) == 0) {
   stop(
-    "No small modular reactor or microreactor records were retained."
+    "No small modular reactor or microreactor observations were retained."
   )
 }
 
@@ -413,8 +685,15 @@ years <- sort(
   unique(plot_data$publication_year)
 )
 
+if (length(years) == 0) {
+  stop(
+    "No valid publication years were retained."
+  )
+}
+
+
 # ============================================================
-# 8. FIGURE SOURCE DATA
+# 12. CREATE FIGURE SOURCE DATA
 # ============================================================
 
 panel_a_data <- plot_data %>%
@@ -449,6 +728,7 @@ panel_a_data <- plot_data %>%
       years
     )
   )
+
 
 panel_b_data <- plot_data %>%
   dplyr::filter(
@@ -490,6 +770,7 @@ panel_b_data <- plot_data %>%
     )
   )
 
+
 panel_c_data <- plot_data %>%
   dplyr::filter(
     classification_label ==
@@ -530,8 +811,9 @@ panel_c_data <- plot_data %>%
     )
   )
 
+
 # ============================================================
-# 9. EXPORT FIGURE SOURCE DATA
+# 13. EXPORT FIGURE SOURCE DATA
 # ============================================================
 
 readr::write_csv(
@@ -541,10 +823,7 @@ readr::write_csv(
       classification_label,
       n_reactors
     ),
-  file.path(
-    data_dir,
-    "fig01_panel_a_source_data.csv"
-  )
+  panel_a_output
 )
 
 readr::write_csv(
@@ -554,10 +833,7 @@ readr::write_csv(
       phase_label,
       n_reactors
     ),
-  file.path(
-    data_dir,
-    "fig01_panel_b_source_data.csv"
-  )
+  panel_b_output
 )
 
 readr::write_csv(
@@ -567,14 +843,12 @@ readr::write_csv(
       phase_label,
       n_reactors
     ),
-  file.path(
-    data_dir,
-    "fig01_panel_c_source_data.csv"
-  )
+  panel_c_output
 )
 
+
 # ============================================================
-# 10. PANEL A
+# 14. PANEL A
 # ============================================================
 
 panel_a <- ggplot2::ggplot(
@@ -642,41 +916,44 @@ panel_a <- ggplot2::ggplot(
       0.02,
       0.98
     ),
+
     legend.justification = c(
       0,
       1
     ),
+
     legend.direction = "vertical",
     legend.box = "vertical",
-    legend.background =
-      ggplot2::element_rect(
-        fill = "white",
-        colour = NA
-      ),
-    legend.title =
-      ggplot2::element_text(
-        size = LEGEND_TITLE_SIZE,
-        colour = "black"
-      ),
-    legend.text =
-      ggplot2::element_text(
-        size = LEGEND_TEXT_SIZE,
-        colour = "black"
-      ),
-    legend.spacing.y =
-      grid::unit(
-        3.5,
-        "mm"
-      ),
-    legend.key.height =
-      grid::unit(
-        4.2,
-        "mm"
-      )
+
+    legend.background = ggplot2::element_rect(
+      fill = "white",
+      colour = NA
+    ),
+
+    legend.title = ggplot2::element_text(
+      size = LEGEND_TITLE_SIZE,
+      colour = "black"
+    ),
+
+    legend.text = ggplot2::element_text(
+      size = LEGEND_TEXT_SIZE,
+      colour = "black"
+    ),
+
+    legend.spacing.y = grid::unit(
+      3.5,
+      "mm"
+    ),
+
+    legend.key.height = grid::unit(
+      4.2,
+      "mm"
+    )
   )
 
+
 # ============================================================
-# 11. PANEL B
+# 15. PANEL B
 # ============================================================
 
 panel_b <- ggplot2::ggplot(
@@ -738,6 +1015,7 @@ panel_b <- ggplot2::ggplot(
   ) +
   base_theme
 
+
 legend_phase <- cowplot::get_legend(
   panel_b +
     ggplot2::theme(
@@ -745,42 +1023,41 @@ legend_phase <- cowplot::get_legend(
       legend.direction = "horizontal",
       legend.box = "horizontal",
       legend.justification = "center",
-      legend.title =
-        ggplot2::element_blank(),
-      legend.text =
-        ggplot2::element_text(
-          size = LEGEND_TEXT_SIZE,
-          colour = "black"
-        ),
-      legend.key.height =
-        grid::unit(
-          3.2,
-          "mm"
-        ),
-      legend.key.width =
-        grid::unit(
-          3.2,
-          "mm"
-        ),
-      legend.spacing.x =
-        grid::unit(
-          1.5,
-          "mm"
-        ),
-      legend.margin =
-        ggplot2::margin(
-          0,
-          0,
-          0,
-          0
-        ),
-      legend.box.margin =
-        ggplot2::margin(
-          0,
-          0,
-          0,
-          0
-        )
+      legend.title = ggplot2::element_blank(),
+
+      legend.text = ggplot2::element_text(
+        size = LEGEND_TEXT_SIZE,
+        colour = "black"
+      ),
+
+      legend.key.height = grid::unit(
+        3.2,
+        "mm"
+      ),
+
+      legend.key.width = grid::unit(
+        3.2,
+        "mm"
+      ),
+
+      legend.spacing.x = grid::unit(
+        1.5,
+        "mm"
+      ),
+
+      legend.margin = ggplot2::margin(
+        0,
+        0,
+        0,
+        0
+      ),
+
+      legend.box.margin = ggplot2::margin(
+        0,
+        0,
+        0,
+        0
+      )
     )
 )
 
@@ -789,8 +1066,9 @@ panel_b <- panel_b +
     legend.position = "none"
   )
 
+
 # ============================================================
-# 12. PANEL C
+# 16. PANEL C
 # ============================================================
 
 panel_c <- ggplot2::ggplot(
@@ -855,8 +1133,9 @@ panel_c <- ggplot2::ggplot(
     legend.position = "none"
   )
 
+
 # ============================================================
-# 13. COMBINE FIGURE
+# 17. COMBINE FIGURE
 # ============================================================
 
 pa <- tag_panel(
@@ -888,7 +1167,7 @@ bottom_panels <- cowplot::plot_grid(
 
 phase_label_plot <- cowplot::ggdraw() +
   cowplot::draw_label(
-    "Phase",
+    label = "Phase",
     x = 0,
     y = 0.5,
     hjust = 0,
@@ -921,7 +1200,7 @@ phase_legend_row <- cowplot::plot_grid(
   )
 )
 
-fig_core <- cowplot::plot_grid(
+figure_core <- cowplot::plot_grid(
   pa,
   bottom_panels,
   phase_legend_row,
@@ -936,41 +1215,41 @@ fig_core <- cowplot::plot_grid(
 )
 
 fig01 <- cowplot::ggdraw(
-  fig_core
+  figure_core
 )
 
+print(fig01)
+
+
 # ============================================================
-# 14. SAVE FIGURE
+# 18. SAVE FIGURE
 # ============================================================
 
 ggplot2::ggsave(
-  filename = file.path(
-    output_dir,
-    "fig01_pipeline_and_phase_panels.png"
-  ),
+  filename = png_output,
   plot = fig01,
   width = SAVE_W_MM,
   height = SAVE_H_MM,
   units = "mm",
   dpi = SAVE_DPI,
-  bg = "white"
+  bg = "white",
+  limitsize = FALSE
 )
 
 ggplot2::ggsave(
-  filename = file.path(
-    output_dir,
-    "fig01_pipeline_and_phase_panels.pdf"
-  ),
+  filename = pdf_output,
   plot = fig01,
   width = SAVE_W_MM,
   height = SAVE_H_MM,
   units = "mm",
-  device = cairo_pdf,
-  bg = "white"
+  device = grDevices::cairo_pdf,
+  bg = "white",
+  limitsize = FALSE
 )
 
+
 # ============================================================
-# 15. DESCRIPTIVE STATISTICS
+# 19. DESCRIPTIVE STATISTICS
 # ============================================================
 
 reactor_type_by_year <- plot_data %>%
@@ -1002,13 +1281,15 @@ reactor_type_by_year <- plot_data %>%
   dplyr::rename(
     small_modular_reactor =
       `Small modular reactor`,
+
     microreactor =
-      `Microreactor`
+      Microreactor
   ) %>%
   dplyr::mutate(
     total_reactors =
       small_modular_reactor +
       microreactor,
+
     microreactor_share =
       dplyr::if_else(
         total_reactors > 0,
@@ -1020,6 +1301,7 @@ reactor_type_by_year <- plot_data %>%
   dplyr::arrange(
     publication_year
   )
+
 
 phase_by_reactor_type_year <- plot_data %>%
   dplyr::filter(
@@ -1033,14 +1315,17 @@ phase_by_reactor_type_year <- plot_data %>%
   ) %>%
   tidyr::complete(
     publication_year = years,
+
     classification_label = factor(
       classification_order,
       levels = classification_order
     ),
+
     phase_label = factor(
       phase_order,
       levels = phase_order
     ),
+
     fill = list(
       n_reactors = 0
     )
@@ -1050,6 +1335,7 @@ phase_by_reactor_type_year <- plot_data %>%
       classification_label,
       levels = classification_order
     ),
+
     phase_label = factor(
       phase_label,
       levels = phase_order
@@ -1061,6 +1347,7 @@ phase_by_reactor_type_year <- plot_data %>%
     phase_label
   )
 
+
 phase_by_reactor_type_year_wide <-
   phase_by_reactor_type_year %>%
   tidyr::pivot_wider(
@@ -1070,18 +1357,24 @@ phase_by_reactor_type_year_wide <-
   dplyr::rename(
     reactor_type =
       classification_label,
+
     conceptual_design =
       `Conceptual design`,
+
     basic_design =
       `Basic design`,
+
     detailed_design =
       `Detailed design`,
+
     licensing =
-      `Licensing`,
+      Licensing,
+
     construction =
-      `Construction`,
+      Construction,
+
     operational =
-      `Operational`
+      Operational
   ) %>%
   dplyr::mutate(
     total_reactors =
@@ -1097,26 +1390,6 @@ phase_by_reactor_type_year_wide <-
     publication_year
   )
 
-get_year_value <- function(
-    data,
-    year,
-    variable
-) {
-  
-  value <- data %>%
-    dplyr::filter(
-      publication_year == year
-    ) %>%
-    dplyr::pull(
-      {{ variable }}
-    )
-  
-  if (length(value) == 0) {
-    return(NA_real_)
-  }
-  
-  as.numeric(value[1])
-}
 
 summary_descriptives <- tibble::tibble(
   metric = c(
@@ -1135,52 +1408,62 @@ summary_descriptives <- tibble::tibble(
     "peak_year",
     "peak_total_reactors"
   ),
+
   value = c(
     get_year_value(
       reactor_type_by_year,
       2012,
       total_reactors
     ),
+
     get_year_value(
       reactor_type_by_year,
       2022,
       total_reactors
     ),
+
     get_year_value(
       reactor_type_by_year,
       2024,
       total_reactors
     ),
+
     get_year_value(
       reactor_type_by_year,
       2012,
       small_modular_reactor
     ),
+
     get_year_value(
       reactor_type_by_year,
       2022,
       small_modular_reactor
     ),
+
     get_year_value(
       reactor_type_by_year,
       2024,
       small_modular_reactor
     ),
+
     get_year_value(
       reactor_type_by_year,
       2012,
       microreactor
     ),
+
     get_year_value(
       reactor_type_by_year,
       2022,
       microreactor
     ),
+
     get_year_value(
       reactor_type_by_year,
       2024,
       microreactor
     ),
+
     round(
       get_year_value(
         reactor_type_by_year,
@@ -1189,6 +1472,7 @@ summary_descriptives <- tibble::tibble(
       ),
       3
     ),
+
     round(
       get_year_value(
         reactor_type_by_year,
@@ -1197,6 +1481,7 @@ summary_descriptives <- tibble::tibble(
       ),
       3
     ),
+
     round(
       get_year_value(
         reactor_type_by_year,
@@ -1205,6 +1490,7 @@ summary_descriptives <- tibble::tibble(
       ),
       3
     ),
+
     reactor_type_by_year$
       publication_year[
         which.max(
@@ -1212,6 +1498,7 @@ summary_descriptives <- tibble::tibble(
             total_reactors
         )
       ],
+
     max(
       reactor_type_by_year$
         total_reactors,
@@ -1220,70 +1507,92 @@ summary_descriptives <- tibble::tibble(
   )
 )
 
+
 # ============================================================
-# 16. SAVE DESCRIPTIVE STATISTICS
+# 20. SAVE DESCRIPTIVE STATISTICS
 # ============================================================
 
 readr::write_csv(
   reactor_type_by_year,
-  file.path(
-    data_dir,
-    "fig01_descriptives_reactor_type_by_year.csv"
-  )
+  reactor_type_output
 )
 
 readr::write_csv(
   phase_by_reactor_type_year,
-  file.path(
-    data_dir,
-    "fig01_descriptives_phase_by_reactor_type_year.csv"
-  )
+  phase_long_output
 )
 
 readr::write_csv(
   phase_by_reactor_type_year_wide,
-  file.path(
-    data_dir,
-    "fig01_descriptives_phase_by_reactor_type_year_wide.csv"
-  )
+  phase_wide_output
 )
 
 readr::write_csv(
   summary_descriptives,
-  file.path(
-    data_dir,
-    "fig01_descriptives_summary.csv"
-  )
+  summary_output
 )
 
+
 # ============================================================
-# 17. FINAL OUTPUT
+# 21. VERIFY OUTPUTS
+# ============================================================
+
+expected_outputs <- c(
+  png_output,
+  pdf_output,
+  panel_a_output,
+  panel_b_output,
+  panel_c_output,
+  reactor_type_output,
+  phase_long_output,
+  phase_wide_output,
+  summary_output
+)
+
+missing_outputs <- expected_outputs[
+  !file.exists(expected_outputs)
+]
+
+if (length(missing_outputs) > 0) {
+
+  stop(
+    paste0(
+      "Figure 1 finished, but the following outputs were not created:\n",
+      paste(
+        missing_outputs,
+        collapse = "\n"
+      )
+    )
+  )
+}
+
+
+# ============================================================
+# 22. FINAL OUTPUT
 # ============================================================
 
 message("")
 message("==============================================")
 message("FIGURE 1 ANALYSIS COMPLETE")
 message("==============================================")
+message("Repository root: ", project_dir)
 message("Input file: ", input_file)
-message(
-  "PNG: ",
-  file.path(
-    output_dir,
-    "fig01_pipeline_and_phase_panels.png"
-  )
-)
-message(
-  "PDF: ",
-  file.path(
-    output_dir,
-    "fig01_pipeline_and_phase_panels.pdf"
-  )
-)
+message("Worksheet: ", sheet_name)
+message("PNG: ", png_output)
+message("PDF: ", pdf_output)
 message("Source data and descriptives: ", data_dir)
 message("==============================================")
 
-print(reactor_type_by_year)
-print(phase_by_reactor_type_year_wide)
-print(summary_descriptives)
+print(
+  reactor_type_by_year
+)
+
+print(
+  phase_by_reactor_type_year_wide
+)
+
+print(
+  summary_descriptives
+)
 
 fig01
