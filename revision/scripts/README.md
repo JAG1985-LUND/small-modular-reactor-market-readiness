@@ -1,9 +1,13 @@
 # R scripts
 
-This directory contains the R scripts used to reproduce Figures 1–10 of the revised manuscript *“Is the world ready for small modular reactors? Longitudinal insights into market readiness”*.
+This directory contains the R scripts supporting the revised manuscript *“Is the world ready for small modular reactors? Longitudinal insights into market readiness”*.
 
-The scripts use source-data workbooks stored in `revision/data/` and generate the corresponding figures in `revision/figures/`.
+The scripts cover:
 
-All scripts are adapted for execution from the GitHub repository without requiring the original author's local file paths.
+- **Main Figures 1–10:** Reproducible analyses and visualisations presented in the revised manuscript.
+- **Supplementary Figures S1–S3:** Scripts generating the supplementary figures, including the separate panels of Figure S3.
+- **Supplementary Tables S1–S18:** Scripts supporting the supplementary statistical analyses, regression models, robustness checks and validation exercises.
 
-The scripts will be added sequentially after verification of their repository-relative input and output paths.
+Some supplementary tables and analyses are generated directly by the main-figure scripts and therefore do not require separate R scripts.
+
+Source-data workbooks are stored in `revision/data/`, and figure outputs are stored in `revision/figures/`. The scripts use repository-relative paths to support reproducibility without relying on the original author's local directory structure.
