@@ -1,8 +1,9 @@
-
-# ================================================================
+# ============================================================
 # SUPPLEMENTARY TABLE S10
 # MULTIVARIABLE TECHNOLOGICAL ASSOCIATIONS
 # NEA SMR DASHBOARD, EDITION 4
+#
+# GitHub-compatible version of the updated JAG script.
 #
 # Input:
 # revision/data/fig08_nea_technological_source_data.xlsx
@@ -10,19 +11,31 @@
 # Output:
 # revision/figures/table_S10_multivariable_technology_results.xlsx
 #
-# Models:
-# - Four-predictor proportional-odds regression
-# - Five market-readiness outcomes
-# - Four drop-one likelihood-ratio tests per outcome
-# - Matched-sample univariate comparisons
-# - Holm multiple-testing adjustment
-# - Predictor and sample audits
+# Five proportional-odds ordinal logistic models.
+# Four technological predictors fitted simultaneously.
+# Complete-case analysis by readiness outcome.
 #
-# No figures. One Excel workbook, 13 worksheets.
-# ================================================================
+# Enrichment categories not_required and unresolved
+# are excluded from the regression models.
+#
+# Additional analyses:
+# Drop-one likelihood-ratio tests
+# Matched-sample univariate regressions
+# Adjusted versus unadjusted comparisons
+# Holm multiple-testing adjustment
+# Model fit and coding audits
+#
+# One Excel workbook containing 13 worksheets.
+#
+# Updated JAG analytical specifications retained.
+# Original GitHub input and output filenames retained.
+# This GitHub adaptation has not been independently executed.
+# ============================================================
 
 
-# 1. PACKAGES ----------------------------------------------------
+# ============================================================
+# 1. PACKAGES
+# ============================================================
 
 packages <- c(
   "readxl",
@@ -41,10 +54,7 @@ missing_packages <- packages[
 ]
 
 if (length(missing_packages) > 0) {
-  stop(
-    "Install the following R packages: ",
-    paste(missing_packages, collapse = ", ")
-  )
+  install.packages(missing_packages)
 }
 
 suppressPackageStartupMessages({
@@ -55,7 +65,9 @@ suppressPackageStartupMessages({
 })
 
 
-# 2. GITHUB-COMPATIBLE PATHS -------------------------------------
+# ============================================================
+# 2. GITHUB-COMPATIBLE PATHS
+# ============================================================
 
 SOURCE_FILE <- file.path(
   "revision",
@@ -67,21 +79,21 @@ find_repo_root <- function(
     start_dir = getwd(),
     target_file = SOURCE_FILE
 ) {
-  
+
   current <- normalizePath(
     start_dir,
     winslash = "/",
     mustWork = TRUE
   )
-  
+
   repeat {
-    
+
     if (file.exists(file.path(current, target_file))) {
       return(current)
     }
-    
+
     parent <- dirname(current)
-    
+
     if (identical(parent, current)) {
       stop(
         "Could not locate repository root.\n",
@@ -89,7 +101,7 @@ find_repo_root <- function(
         "Run from within the repository."
       )
     }
-    
+
     current <- parent
   }
 }
@@ -123,25 +135,24 @@ if (!file.exists(input_file)) {
 }
 
 
-# 3. HELPER FUNCTIONS --------------------------------------------
+# ============================================================
+# 3. HELPER FUNCTIONS
+# ============================================================
 
 clean_names <- function(x) {
-  
   x <- tolower(trimws(x))
   x <- gsub("[^a-z0-9]+", "_", x)
   x <- gsub("^_+|_+$", "", x)
-  
   make.unique(x, sep = "_")
 }
 
 normalise <- function(x) {
-  
   x <- tolower(trimws(as.character(x)))
-  
+
   x[x %in% c(
     "", "na", "n/a", "unknown", "not reported"
   )] <- NA_character_
-  
+
   x
 }
 
@@ -151,41 +162,72 @@ find_column <- function(
     description,
     required = TRUE
 ) {
-  
+
   found <- candidates[
     candidates %in% names(df)
   ]
-  
+
   if (length(found) > 0) {
     return(found[1])
   }
-  
+
   if (required) {
     stop(
       "Missing column: ", description,
-      "\nAccepted names: ",
-      paste(candidates, collapse = ", "),
-      "\nAvailable columns: ",
-      paste(names(df), collapse = ", ")
+      "\nAccepted: ",
+      paste(candidates, collapse = ", ")
     )
   }
-  
+
   NA_character_
 }
 
 make_outcome <- function(x) {
-  
-  x <- suppressWarnings(
+
+  values <- suppressWarnings(
     as.numeric(as.character(x))
   )
-  
-  x[is.na(x) | !(x %in% 1:6)] <- NA_real_
-  
-  ordered(x, levels = 1:6)
+
+  invalid <- !is.na(values) &
+    !(values %in% 1:6)
+
+  if (any(invalid)) {
+    stop("Unexpected readiness scores detected.")
+  }
+
+  ordered(values, levels = 1:6)
+}
+
+check_mapping <- function(raw, coded, label) {
+
+  invalid <- is.na(coded)
+
+  if (any(invalid)) {
+    stop(
+      "Unmapped ", label, " values: ",
+      paste(
+        unique(as.character(raw[invalid])),
+        collapse = ", "
+      )
+    )
+  }
+}
+
+fit_polr <- function(formula, df) {
+
+  MASS::polr(
+    formula = formula,
+    data = df,
+    method = "logistic",
+    Hess = TRUE,
+    control = list(maxit = 1000)
+  )
 }
 
 
-# 4. IMPORT DATA -------------------------------------------------
+# ============================================================
+# 4. IMPORT DATA
+# ============================================================
 
 sheets <- readxl::excel_sheets(input_file)
 
@@ -205,7 +247,9 @@ names(raw) <- clean_names(names(raw))
 cat("\nReading sheet:", sheet_name, "\n")
 
 
-# 5. IDENTIFY COLUMNS --------------------------------------------
+# ============================================================
+# 5. IDENTIFY COLUMNS
+# ============================================================
 
 design_col <- find_column(
   raw,
@@ -234,8 +278,8 @@ cooling_col <- find_column(
 spectrum_col <- find_column(
   raw,
   c(
-    "spectrum",
     "neutron_spectrum",
+    "spectrum",
     "neturon_spectrum"
   ),
   "Neutron spectrum"
@@ -281,18 +325,21 @@ outcome_columns <- c(
 )
 
 
-# 6. FILTER EDITION 4 --------------------------------------------
+# ============================================================
+# 6. FILTER EDITION 4
+# ============================================================
 
 data <- raw
 
 if (!is.na(edition_col)) {
-  
+
   edition_values <- suppressWarnings(
     as.numeric(as.character(data[[edition_col]]))
   )
-  
+
   data <- data[
-    !is.na(edition_values) & edition_values == 4,
+    !is.na(edition_values) &
+      edition_values == 4,
     ,
     drop = FALSE
   ]
@@ -324,38 +371,45 @@ if (nrow(data) != 91) {
 cat("\nEdition 4 designs:", nrow(data), "\n")
 
 
-# 7. RECODE COOLING TYPE -----------------------------------------
-
+# ============================================================
+# 7. RECODE COOLING TYPE
 # Reference: Non-water-cooled
+# ============================================================
 
-cooling_raw <- normalise(
-  data[[cooling_col]]
-)
+cooling_raw <- normalise(data[[cooling_col]])
 
 data$cooling_group <- dplyr::case_when(
-  
+
   cooling_raw %in% c(
     "true", "1", "yes",
     "water", "water-cooled",
     "water_cooled", "water cooled",
     "watercooled"
   ) ~ "Water-cooled",
-  
+
   cooling_raw %in% c(
     "false", "0", "no",
     "non-water-cooled",
     "non_water_cooled",
     "non water cooled",
     "non-water", "non_water",
-    "gas-cooled", "gas_cooled",
-    "metal-cooled", "metal_cooled",
+    "gas", "gas-cooled", "gas_cooled",
+    "metal", "metal-cooled", "metal_cooled",
+    "salt", "molten salt",
     "molten-salt-cooled",
     "molten_salt_cooled",
+    "heat pipe", "heat-pipe",
     "heat-pipe-cooled",
     "heat_pipe_cooled"
   ) ~ "Non-water-cooled",
-  
+
   TRUE ~ NA_character_
+)
+
+check_mapping(
+  cooling_raw,
+  data$cooling_group,
+  "cooling"
 )
 
 data$cooling_group <- factor(
@@ -367,29 +421,36 @@ data$cooling_group <- factor(
 )
 
 
-# 8. RECODE NEUTRON SPECTRUM -------------------------------------
-
+# ============================================================
+# 8. RECODE NEUTRON SPECTRUM
 # Reference: Fast
+# ============================================================
 
 spectrum_raw <- normalise(
   data[[spectrum_col]]
 )
 
 data$spectrum_group <- dplyr::case_when(
-  
+
   spectrum_raw %in% c(
     "thermal",
     "thermal spectrum",
     "thermal-spectrum"
   ) ~ "Thermal",
-  
+
   spectrum_raw %in% c(
     "fast",
     "fast spectrum",
     "fast-spectrum"
   ) ~ "Fast",
-  
+
   TRUE ~ NA_character_
+)
+
+check_mapping(
+  spectrum_raw,
+  data$spectrum_group,
+  "neutron spectrum"
 )
 
 data$spectrum_group <- factor(
@@ -398,16 +459,15 @@ data$spectrum_group <- factor(
 )
 
 
-# 9. RECODE FUEL TYPE --------------------------------------------
-
+# ============================================================
+# 9. RECODE FUEL TYPE
 # Reference: TRISO/Other
+# ============================================================
 
-fuel_raw <- normalise(
-  data[[fuel_col]]
-)
+fuel_raw <- normalise(data[[fuel_col]])
 
 data$fuel_group <- dplyr::case_when(
-  
+
   fuel_raw %in% c(
     "uranium", "uranium fuel",
     "uranium-based", "u",
@@ -417,111 +477,130 @@ data$fuel_group <- dplyr::case_when(
     "metallic u-zr alloy",
     "metallic uranium"
   ) ~ "Uranium",
-  
+
   fuel_raw %in% c(
     "triso", "triso pebble",
     "triso-x pebble",
     "other", "other fuels",
     "molten salt fuel", "mox"
   ) ~ "TRISO/Other",
-  
+
   TRUE ~ NA_character_
+)
+
+check_mapping(
+  fuel_raw,
+  data$fuel_group,
+  "fuel type"
 )
 
 data$fuel_group <- factor(
   data$fuel_group,
-  levels = c(
-    "TRISO/Other",
-    "Uranium"
-  )
+  levels = c("TRISO/Other", "Uranium")
 )
 
 
-# 10. RECODE FUEL ENRICHMENT -------------------------------------
-
+# ============================================================
+# 10. RECODE FUEL ENRICHMENT
 # Reference: LEU
-# Designs with enrichment not required are excluded.
+#
+# Exclude not_required and unresolved.
+# ============================================================
 
 enrichment_raw <- normalise(
   data[[enrichment_col]]
 )
 
 data$enrichment_group <- dplyr::case_when(
-  
+
   enrichment_raw %in% c(
     "leu",
     "low enriched uranium",
     "low-enriched uranium"
   ) ~ "LEU",
-  
+
   enrichment_raw %in% c(
     "haleu", "ha-leu", "ha leu",
     "high-assay low-enriched uranium"
   ) ~ "HALEU",
-  
+
   enrichment_raw %in% c(
     "not_required",
     "not required",
-    "not-required"
+    "not-required",
+    "unresolved"
   ) ~ NA_character_,
-  
+
   TRUE ~ NA_character_
 )
+
+valid_exclusions <- enrichment_raw %in% c(
+  "not_required",
+  "not required",
+  "not-required",
+  "unresolved"
+)
+
+unexpected_enrichment <- is.na(
+  data$enrichment_group
+) & !valid_exclusions
+
+if (any(unexpected_enrichment)) {
+  stop(
+    "Unexpected fuel enrichment values: ",
+    paste(
+      unique(
+        as.character(
+          enrichment_raw[unexpected_enrichment]
+        )
+      ),
+      collapse = ", "
+    )
+  )
+}
 
 data$enrichment_group <- factor(
   data$enrichment_group,
   levels = c("LEU", "HALEU")
 )
 
+cat("\nFuel enrichment classifications:\n")
 
-# 11. VALIDATE CODING --------------------------------------------
-
-required_predictors <- c(
-  "cooling_group",
-  "spectrum_group",
-  "fuel_group"
-)
-
-if (anyNA(data[, required_predictors])) {
-  stop(
-    "Unmapped cooling, spectrum or fuel values. ",
-    "Check the input workbook."
-  )
-}
-
-valid_not_required <- enrichment_raw %in% c(
-  "not_required",
-  "not required",
-  "not-required"
-)
-
-unexpected_enrichment <- (
-  is.na(data$enrichment_group) &
-    !valid_not_required
-)
-
-if (any(unexpected_enrichment)) {
-  stop("Unexpected fuel enrichment values detected.")
-}
+print(table(
+  enrichment_raw,
+  useNA = "ifany"
+))
 
 
-# 12. CODING AUDIT -----------------------------------------------
+# ============================================================
+# 11. CODING AUDIT
+# ============================================================
 
 coding_audit <- data.frame(
   design = data$design_id,
-  cooling_raw = as.character(data[[cooling_col]]),
+  cooling_raw = as.character(
+    data[[cooling_col]]
+  ),
   cooling_group = data$cooling_group,
-  spectrum_raw = as.character(data[[spectrum_col]]),
+  spectrum_raw = as.character(
+    data[[spectrum_col]]
+  ),
   spectrum_group = data$spectrum_group,
-  fuel_raw = as.character(data[[fuel_col]]),
+  fuel_raw = as.character(
+    data[[fuel_col]]
+  ),
   fuel_group = data$fuel_group,
-  enrichment_raw = as.character(data[[enrichment_col]]),
+  enrichment_raw = as.character(
+    data[[enrichment_col]]
+  ),
   enrichment_group = data$enrichment_group,
   stringsAsFactors = FALSE
 )
 
 
-# 13. OUTCOME VARIABLES ------------------------------------------
+# ============================================================
+# 12. OUTCOME VARIABLES
+# ============================================================
 
 outcome_order <- c(
   "Financing",
@@ -532,21 +611,23 @@ outcome_order <- c(
 )
 
 for (outcome in outcome_order) {
-  
+
   source_col <- outcome_columns[[outcome]]
-  
+
   new_col <- paste0(
     "outcome_",
     gsub(" ", "_", tolower(outcome))
   )
-  
+
   data[[new_col]] <- make_outcome(
     data[[source_col]]
   )
 }
 
 
-# 14. MODEL SPECIFICATION ----------------------------------------
+# ============================================================
+# 13. MODEL SPECIFICATION
+# ============================================================
 
 predictors <- c(
   "cooling_group",
@@ -563,7 +644,8 @@ predictor_labels <- c(
 )
 
 comparison_labels <- c(
-  cooling_group = "Water-cooled vs non-water-cooled",
+  cooling_group =
+    "Water-cooled vs non-water-cooled",
   spectrum_group = "Thermal vs fast",
   fuel_group = "Uranium vs TRISO/Other",
   enrichment_group = "HALEU vs LEU"
@@ -577,7 +659,9 @@ reference_labels <- c(
 )
 
 
-# 15. EXTRACT ODDS RATIOS ----------------------------------------
+# ============================================================
+# 14. EXTRACT ODDS RATIOS
+# ============================================================
 
 extract_results <- function(
     model,
@@ -585,41 +669,44 @@ extract_results <- function(
     model_type,
     n_used
 ) {
-  
+
   coefficient_table <- coef(summary(model))
   coefficient_names <- names(coef(model))
-  
-  output <- list()
-  
+
+  output <- vector(
+    "list",
+    length(coefficient_names)
+  )
+
   for (i in seq_along(coefficient_names)) {
-    
+
     term <- coefficient_names[i]
-    
+
     beta <- unname(
       coefficient_table[term, "Value"]
     )
-    
+
     se <- unname(
       coefficient_table[term, "Std. Error"]
     )
-    
+
     z <- beta / se
-    
+
     p <- 2 * pnorm(
       abs(z),
       lower.tail = FALSE
     )
-    
+
     matching_predictor <- predictors[
       startsWith(term, predictors)
     ]
-    
+
     if (length(matching_predictor) != 1) {
       stop("Unexpected coefficient: ", term)
     }
-    
+
     predictor <- matching_predictor[1]
-    
+
     output[[i]] <- data.frame(
       outcome = outcome_name,
       model = model_type,
@@ -636,12 +723,14 @@ extract_results <- function(
       stringsAsFactors = FALSE
     )
   }
-  
+
   dplyr::bind_rows(output)
 }
 
 
-# 16. RESULT CONTAINERS ------------------------------------------
+# ============================================================
+# 15. OUTPUT CONTAINERS
+# ============================================================
 
 full_results_list <- list()
 unadjusted_results_list <- list()
@@ -651,24 +740,24 @@ sample_audit_list <- list()
 predictor_counts_list <- list()
 
 
-# 17. RUN FIVE OUTCOMES ------------------------------------------
+# ============================================================
+# 16. RUN FIVE MULTIVARIABLE MODELS
+# ============================================================
 
 for (outcome in outcome_order) {
-  
+
   cat(
     "\n========================================\n",
     "OUTCOME: ", outcome,
     "\n========================================\n",
     sep = ""
   )
-  
+
   outcome_col <- paste0(
     "outcome_",
     gsub(" ", "_", tolower(outcome))
   )
-  
-  # Complete-case dataset for this outcome.
-  
+
   model_data <- data.frame(
     design = data$design_id,
     response = data[[outcome_col]],
@@ -677,7 +766,7 @@ for (outcome in outcome_order) {
     fuel_group = data$fuel_group,
     enrichment_group = data$enrichment_group
   )
-  
+
   model_data <- model_data[
     complete.cases(
       model_data[, c("response", predictors)]
@@ -685,23 +774,23 @@ for (outcome in outcome_order) {
     ,
     drop = FALSE
   ]
-  
+
   n_used <- nrow(model_data)
-  
+
   cat("Complete-case n:", n_used, "\n")
-  
+
   if (n_used < 20) {
     stop("Too few complete cases for ", outcome)
   }
-  
-  # Check predictor categories.
-  
+
+  # Check predictor variation.
+
   for (predictor in predictors) {
-    
+
     model_data[[predictor]] <- droplevels(
       model_data[[predictor]]
     )
-    
+
     if (nlevels(model_data[[predictor]]) != 2) {
       stop(
         "Predictor lacks two categories: ",
@@ -709,75 +798,80 @@ for (outcome in outcome_order) {
       )
     }
   }
-  
+
   if (length(unique(model_data$response)) < 2) {
     stop("Outcome lacks variation: ", outcome)
   }
-  
-  # Check for perfect collinearity.
-  
+
+  # Full four-predictor formula.
+
   full_formula <- as.formula(
     paste(
       "response ~",
       paste(predictors, collapse = " + ")
     )
   )
-  
+
+  # Check for perfect predictor collinearity.
+
   model_matrix <- model.matrix(
     full_formula,
     data = model_data
   )
-  
-  if (qr(model_matrix)$rank < ncol(model_matrix)) {
+
+  if (
+    qr(model_matrix)$rank <
+    ncol(model_matrix)
+  ) {
     stop(
-      "Perfect collinearity detected for ",
+      "Perfect predictor collinearity: ",
       outcome
     )
   }
-  
-  # Full four-predictor model.
-  
-  full_model <- MASS::polr(
-    formula = full_formula,
-    data = model_data,
-    method = "logistic",
-    Hess = TRUE
+
+  # --------------------------------------------------------
+  # A. FULL MULTIVARIABLE MODEL
+  # --------------------------------------------------------
+
+  full_model <- fit_polr(
+    full_formula,
+    model_data
   )
-  
+
   full_results_list[[outcome]] <- extract_results(
     full_model,
     outcome,
     "Full multivariable",
     n_used
   )
-  
-  # Model fit.
-  
-  null_model <- MASS::polr(
+
+  # --------------------------------------------------------
+  # B. MODEL FIT
+  # --------------------------------------------------------
+
+  null_model <- fit_polr(
     response ~ 1,
-    data = model_data,
-    method = "logistic",
-    Hess = TRUE
+    model_data
   )
-  
+
   full_loglik <- as.numeric(logLik(full_model))
   null_loglik <- as.numeric(logLik(null_model))
-  
+
   full_df <- attr(logLik(full_model), "df")
   null_df <- attr(logLik(null_model), "df")
-  
+
   omnibus_lr <- 2 * (
     full_loglik - null_loglik
   )
-  
+
   omnibus_df <- full_df - null_df
-  
+
   omnibus_p <- pchisq(
     omnibus_lr,
     df = omnibus_df,
     lower.tail = FALSE
   )
-  
+
   model_fit_list[[outcome]] <- data.frame(
     outcome = outcome,
     n = n_used,
@@ -789,157 +883,170 @@ for (outcome in outcome_order) {
     omnibus_lr = omnibus_lr,
     omnibus_df = omnibus_df,
     omnibus_p = omnibus_p,
-    mcfadden_pseudo_r2 = (
-      1 - full_loglik / null_loglik
-    ),
+    mcfadden_pseudo_r2 =
+      1 - full_loglik / null_loglik,
     stringsAsFactors = FALSE
   )
-  
-  # Drop-one-predictor likelihood-ratio tests.
-  
+
+  # --------------------------------------------------------
+  # C. DROP-ONE LIKELIHOOD-RATIO TESTS
+  # --------------------------------------------------------
+
   drop_results <- list()
-  
+
   for (removed in predictors) {
-    
-    remaining <- setdiff(predictors, removed)
-    
+
+    remaining <- setdiff(
+      predictors,
+      removed
+    )
+
     reduced_formula <- as.formula(
       paste(
         "response ~",
         paste(remaining, collapse = " + ")
       )
     )
-    
-    reduced_model <- MASS::polr(
-      formula = reduced_formula,
-      data = model_data,
-      method = "logistic",
-      Hess = TRUE
+
+    reduced_model <- fit_polr(
+      reduced_formula,
+      model_data
     )
-    
+
     reduced_loglik <- as.numeric(
       logLik(reduced_model)
     )
-    
+
     reduced_df <- attr(
       logLik(reduced_model),
       "df"
     )
-    
+
     lr_statistic <- 2 * (
       full_loglik - reduced_loglik
     )
-    
+
     lr_df <- full_df - reduced_df
-    
+
     lr_p <- pchisq(
       lr_statistic,
       df = lr_df,
       lower.tail = FALSE
     )
-    
+
     drop_results[[removed]] <- data.frame(
       outcome = outcome,
-      removed_predictor = predictor_labels[[removed]],
-      comparison = comparison_labels[[removed]],
+      removed_predictor =
+        predictor_labels[[removed]],
+      comparison =
+        comparison_labels[[removed]],
       n = n_used,
       full_AIC = AIC(full_model),
       reduced_AIC = AIC(reduced_model),
-      delta_AIC = AIC(reduced_model) - AIC(full_model),
+      delta_AIC =
+        AIC(reduced_model) - AIC(full_model),
       likelihood_ratio = lr_statistic,
       df = lr_df,
       p_value = lr_p,
       stringsAsFactors = FALSE
     )
   }
-  
+
   drop_one_results_list[[outcome]] <- (
     dplyr::bind_rows(drop_results)
   )
-  
-  # Univariate models using exactly the same rows.
-  
+
+  # --------------------------------------------------------
+  # D. UNIVARIATE MODELS ON IDENTICAL SAMPLE
+  # --------------------------------------------------------
+
   unadjusted_results <- list()
-  
+
   for (predictor in predictors) {
-    
+
     univariate_formula <- as.formula(
       paste("response ~", predictor)
     )
-    
-    univariate_model <- MASS::polr(
-      formula = univariate_formula,
-      data = model_data,
-      method = "logistic",
-      Hess = TRUE
+
+    univariate_model <- fit_polr(
+      univariate_formula,
+      model_data
     )
-    
-    unadjusted_results[[predictor]] <- extract_results(
-      univariate_model,
-      outcome,
-      "Unadjusted, matched sample",
-      n_used
+
+    unadjusted_results[[predictor]] <- (
+      extract_results(
+        univariate_model,
+        outcome,
+        "Unadjusted, matched sample",
+        n_used
+      )
     )
   }
-  
+
   unadjusted_results_list[[outcome]] <- (
     dplyr::bind_rows(unadjusted_results)
   )
-  
-  # Sample audit.
-  
+
+  # --------------------------------------------------------
+  # E. SAMPLE AUDIT
+  # --------------------------------------------------------
+
   sample_audit_list[[outcome]] <- data.frame(
     outcome = outcome,
     original_designs = nrow(data),
     complete_case_n = n_used,
     excluded_n = nrow(data) - n_used,
-    unique_outcome_categories = length(
-      unique(model_data$response)
-    ),
+    unique_outcome_categories =
+      length(unique(model_data$response)),
     stringsAsFactors = FALSE
   )
-  
-  # Category counts within complete-case sample.
-  
+
+  # --------------------------------------------------------
+  # F. PREDICTOR COUNTS
+  # --------------------------------------------------------
+
   counts <- list()
-  
+
   for (predictor in predictors) {
-    
+
     tab <- as.data.frame(
       table(model_data[[predictor]]),
       stringsAsFactors = FALSE
     )
-    
+
     names(tab) <- c("category", "n")
-    
+
     tab$outcome <- outcome
+
     tab$predictor <- predictor_labels[[predictor]]
-    
+
     counts[[predictor]] <- tab[
       ,
       c("outcome", "predictor", "category", "n")
     ]
   }
-  
+
   predictor_counts_list[[outcome]] <- (
     dplyr::bind_rows(counts)
   )
-  
+
   cat(
     "Full model AIC:",
     round(AIC(full_model), 3),
     "\n"
   )
-  
+
   cat(
-    "Full model omnibus p:",
+    "Omnibus p:",
     signif(omnibus_p, 4),
     "\n"
   )
 }
 
 
-# 18. COMBINE RESULTS --------------------------------------------
+# ============================================================
+# 17. COMBINE RESULTS
+# ============================================================
 
 full_results <- dplyr::bind_rows(
   full_results_list
@@ -966,10 +1073,24 @@ predictor_counts <- dplyr::bind_rows(
 )
 
 
-# 19. MULTIPLE-TESTING ADJUSTMENT --------------------------------
+# ============================================================
+# 18. MULTIPLE-TESTING ADJUSTMENT
+#
+# Holm correction across 20 adjusted coefficient tests.
+# Separate correction for 20 drop-one tests.
+# ============================================================
 
-# Holm adjustment across the 20 coefficient tests,
-# and separately across the 20 drop-one tests.
+if (nrow(full_results) != 20) {
+  stop("Expected 20 adjusted coefficient results.")
+}
+
+if (nrow(unadjusted_results) != 20) {
+  stop("Expected 20 matched univariate results.")
+}
+
+if (nrow(drop_one_results) != 20) {
+  stop("Expected 20 drop-one LR results.")
+}
 
 full_results$p_holm <- p.adjust(
   full_results$p_value,
@@ -987,13 +1108,16 @@ drop_one_results$p_holm <- p.adjust(
 )
 
 
-# 20. ADJUSTED VS UNADJUSTED -------------------------------------
+# ============================================================
+# 19. ADJUSTED VS UNADJUSTED COMPARISON
+# ============================================================
 
 unadjusted_comparison <- unadjusted_results[
   ,
   c(
     "outcome", "predictor", "comparison", "n",
-    "odds_ratio", "ci_low", "ci_high", "p_value"
+    "odds_ratio", "ci_low", "ci_high",
+    "p_value"
   )
 ]
 
@@ -1012,6 +1136,7 @@ names(unadjusted_comparison)[
 names(unadjusted_comparison)[
   names(unadjusted_comparison) == "p_value"
 ] <- "unadjusted_p"
+
 
 adjusted_comparison <- full_results[
   ,
@@ -1042,6 +1167,7 @@ names(adjusted_comparison)[
   names(adjusted_comparison) == "p_holm"
 ] <- "adjusted_p_holm"
 
+
 comparison_table <- dplyr::left_join(
   unadjusted_comparison,
   adjusted_comparison,
@@ -1071,7 +1197,9 @@ comparison_table$adjusted_holm_significant <- (
 )
 
 
-# 21. FUEL SUPPLY RESULTS ----------------------------------------
+# ============================================================
+# 20. FUEL SUPPLY RESULTS
+# ============================================================
 
 fuel_supply_comparison <- comparison_table[
   comparison_table$outcome == "Fuel supply",
@@ -1086,10 +1214,12 @@ fuel_supply_drop_tests <- drop_one_results[
 ]
 
 
-# 22. OVERALL PREDICTOR COUNTS -----------------------------------
+# ============================================================
+# 21. DESCRIPTIVE PREDICTOR COUNTS
+# ============================================================
 
 make_counts <- function(variable, label) {
-  
+
   tab <- as.data.frame(
     table(
       data[[variable]],
@@ -1097,11 +1227,15 @@ make_counts <- function(variable, label) {
     ),
     stringsAsFactors = FALSE
   )
-  
+
   names(tab) <- c("category", "n")
+
   tab$predictor <- label
-  
-  tab[, c("predictor", "category", "n")]
+
+  tab[
+    ,
+    c("predictor", "category", "n")
+  ]
 }
 
 overall_predictor_counts <- dplyr::bind_rows(
@@ -1124,13 +1258,12 @@ overall_predictor_counts <- dplyr::bind_rows(
 )
 
 
-# 23. PREDICTOR CROSS-TABULATIONS --------------------------------
+# ============================================================
+# 22. PREDICTOR CROSS-TABULATIONS
+# ============================================================
 
-make_crosstab <- function(
-    variable_a,
-    variable_b
-) {
-  
+make_crosstab <- function(variable_a, variable_b) {
+
   tab <- as.data.frame(
     table(
       data[[variable_a]],
@@ -1139,16 +1272,16 @@ make_crosstab <- function(
     ),
     stringsAsFactors = FALSE
   )
-  
+
   names(tab) <- c(
     "category_1",
     "category_2",
     "n"
   )
-  
+
   tab$predictor_1 <- predictor_labels[[variable_a]]
   tab$predictor_2 <- predictor_labels[[variable_b]]
-  
+
   tab[
     ,
     c(
@@ -1177,10 +1310,11 @@ predictor_crosstabs <- dplyr::bind_rows(
 )
 
 
-# 24. MODEL SPECIFICATION RECORD ---------------------------------
+# ============================================================
+# 23. MODEL SPECIFICATION RECORD
+# ============================================================
 
 model_specification <- data.frame(
-  
   item = c(
     "Data source",
     "Edition",
@@ -1202,7 +1336,7 @@ model_specification <- data.frame(
     "Multiple-testing adjustment",
     "Model selection"
   ),
-  
+
   specification = c(
     "OECD NEA SMR Dashboard Edition 4",
     "4",
@@ -1216,7 +1350,7 @@ model_specification <- data.frame(
     "Fast",
     "TRISO/Other",
     "LEU",
-    "not_required excluded from multivariable models",
+    "not_required and unresolved excluded",
     "Complete-case analysis by outcome",
     "Likelihood-ratio tests on identical observations",
     "Univariate models on identical observations",
@@ -1224,42 +1358,44 @@ model_specification <- data.frame(
     "Holm adjustment reported alongside raw p-values",
     "Prespecified full model; no automatic stepwise selection"
   ),
-  
+
   stringsAsFactors = FALSE
 )
 
 
-# 25. CREATE EXCEL WORKBOOK --------------------------------------
+# ============================================================
+# 24. CREATE ONE COMBINED EXCEL WORKBOOK
+# ============================================================
 
 workbook <- openxlsx::createWorkbook()
 
 add_sheet <- function(sheet_name, contents) {
-  
+
   openxlsx::addWorksheet(
     workbook,
     sheet_name
   )
-  
+
   openxlsx::writeData(
     workbook,
     sheet_name,
     contents,
     withFilter = TRUE
   )
-  
+
   openxlsx::freezePane(
     workbook,
     sheet_name,
     firstRow = TRUE
   )
-  
+
   openxlsx::setColWidths(
     workbook,
     sheet_name,
     cols = seq_len(ncol(contents)),
     widths = "auto"
   )
-  
+
   header_style <- openxlsx::createStyle(
     fontColour = "#FFFFFF",
     fgFill = "#17365D",
@@ -1267,7 +1403,7 @@ add_sheet <- function(sheet_name, contents) {
     halign = "center",
     valign = "center"
   )
-  
+
   openxlsx::addStyle(
     workbook,
     sheet_name,
@@ -1344,7 +1480,9 @@ add_sheet(
 )
 
 
-# 26. SAVE WORKBOOK ----------------------------------------------
+# ============================================================
+# 25. SAVE WORKBOOK
+# ============================================================
 
 openxlsx::saveWorkbook(
   workbook,
@@ -1352,16 +1490,10 @@ openxlsx::saveWorkbook(
   overwrite = TRUE
 )
 
-if (
-  !file.exists(output_file) ||
-  is.na(file.info(output_file)$size) ||
-  file.info(output_file)$size == 0
-) {
-  stop("Output workbook was not created correctly.")
-}
 
-
-# 27. PRINT RESULTS ----------------------------------------------
+# ============================================================
+# 26. PRINT PRINCIPAL RESULTS
+# ============================================================
 
 cat(
   "\n========================================\n",
@@ -1372,11 +1504,12 @@ cat(
 
 cat("\nInput designs:", nrow(data), "\n")
 
-cat("\nFuel enrichment categories:\n")
-print(table(enrichment_raw, useNA = "ifany"))
-
 cat("\nComplete-case sample sizes:\n")
-print(sample_audit, row.names = FALSE)
+
+print(
+  sample_audit,
+  row.names = FALSE
+)
 
 cat("\nADJUSTED FUEL SUPPLY RESULTS:\n")
 
@@ -1384,9 +1517,13 @@ print(
   full_results[
     full_results$outcome == "Fuel supply",
     c(
-      "predictor", "n", "odds_ratio",
-      "ci_low", "ci_high",
-      "p_value", "p_holm"
+      "predictor",
+      "n",
+      "odds_ratio",
+      "ci_low",
+      "ci_high",
+      "p_value",
+      "p_holm"
     )
   ],
   row.names = FALSE
@@ -1398,9 +1535,12 @@ print(
   fuel_supply_drop_tests[
     ,
     c(
-      "removed_predictor", "n",
-      "likelihood_ratio", "df",
-      "p_value", "p_holm"
+      "removed_predictor",
+      "n",
+      "likelihood_ratio",
+      "df",
+      "p_value",
+      "p_holm"
     )
   ],
   row.names = FALSE
@@ -1412,14 +1552,23 @@ print(
   model_fit[
     ,
     c(
-      "outcome", "n", "AIC",
-      "omnibus_lr", "omnibus_p",
+      "outcome",
+      "n",
+      "AIC",
+      "omnibus_lr",
+      "omnibus_p",
       "mcfadden_pseudo_r2"
     )
   ],
   row.names = FALSE
 )
 
-cat("\nOUTPUT WORKBOOK:\n", output_file, "\n")
-cat("\nExcel worksheets: 13\n")
+cat(
+  "\nOUTPUT WORKBOOK:\n",
+  output_file,
+  "\n",
+  sep = ""
+)
+
+cat("\nAll results are contained in ONE workbook.\n")
 cat("\nEND OF SCRIPT.\n")
