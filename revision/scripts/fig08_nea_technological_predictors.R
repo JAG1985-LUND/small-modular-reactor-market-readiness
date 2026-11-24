@@ -1695,10 +1695,3 @@ cat("\nMain Figure 8 exported successfully.\n")
 
 # ================================================================
 # END OF SCRIPT
-#
-# Conversion note:
-# Updated JAG analytical logic, classification rules, validation
-# procedures, figure specifications and Excel audit outputs retained.
-# Repository-relative input and output paths restored.
-# Execution against the updated source workbook remains to be verified.
-# ================================================================
