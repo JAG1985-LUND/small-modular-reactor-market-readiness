@@ -1,4 +1,3 @@
-
 # ================================================================
 # SUPPLEMENTARY FIGURES S3(a) AND S3(b)
 # JOINT REGIONAL AND TECHNOLOGICAL ASSOCIATIONS
@@ -6,9 +5,11 @@
 #
 # GITHUB REPRODUCIBLE VERSION
 #
+# Run the Supplementary Tables S14-S15 script first.
+#
 # Input:
-# revision/data/
-#   edition_4_regional_technology_figs03_source_data.xlsx
+# revision/figures/
+#   supp_tables_S14_S15_joint_models_results.xlsx
 #
 # Outputs:
 # revision/figures/
@@ -18,10 +19,11 @@
 #   supp_fig_S04_joint_regional_technological_conventional_smrs.pdf
 #   supp_fig_S03_S04_model_verification.xlsx
 #
-# S3(a): All designs (n = 89)
+# S3(a): All designs (n = 85)
 # S3(b): Conventional SMRs (n = 51)
 #
 # Two Rest-of-world designs excluded.
+# Four additional designs excluded owing to unresolved enrichment.
 # China and Russia combined.
 #
 # Model:
@@ -29,18 +31,28 @@
 # Region + cooling + spectrum + fuel type + enrichment
 #
 # Reference categories:
-# North America, water, thermal, uranium, LEU
+# North America, water-cooled, thermal spectrum,
+# uranium fuel and LEU.
+#
+# Figures are reconstructed directly from the validated
+# regression results reported in Supplementary Table S14.
+# No regression refitting is undertaken.
+#
+# The plotting specifications reproduce the successful
+# JAG figure recovery script.
+#
+# This GitHub adaptation has not been independently executed.
 # ================================================================
 
 
-# 1. PACKAGES ----------------------------------------------------
+# ================================================================
+# 1. PACKAGES
+# ================================================================
 
 packages <- c(
   "readxl",
-  "dplyr",
   "ggplot2",
-  "ordinal",
-  "stringr",
+  "scales",
   "openxlsx"
 )
 
@@ -57,66 +69,69 @@ if (length(missing_packages) > 0) {
   install.packages(missing_packages)
 }
 
-suppressPackageStartupMessages({
-  library(dplyr)
-  library(ggplot2)
-})
+graphics.off()
 
 
-# 2. REPOSITORY PATHS --------------------------------------------
+# ================================================================
+# 2. REPOSITORY PATHS
+# ================================================================
 
-# Optional override:
-# Sys.setenv(SMR_REPO_ROOT = "/path/to/repository")
-#
-# Otherwise, search upwards from the working directory
-# and the executing script's directory.
-
-source_filename <- paste0(
-  "edition_4_regional_technology_",
-  "figs03_source_data.xlsx"
-)
+source_filename <-
+  "supp_tables_S14_S15_joint_models_results.xlsx"
 
 find_repo_root <- function() {
-  
+
   override <- Sys.getenv(
     "SMR_REPO_ROOT",
     unset = ""
   )
-  
+
   candidates <- getwd()
-  
+
   if (nzchar(override)) {
-    candidates <- c(override, candidates)
+    candidates <- c(
+      override,
+      candidates
+    )
   }
-  
+
   args <- commandArgs(
     trailingOnly = FALSE
   )
-  
+
   file_arg <- grep(
     "^--file=",
     args,
     value = TRUE
   )
-  
+
   if (length(file_arg) > 0) {
+
     candidates <- c(
       candidates,
-      dirname(sub("^--file=", "", file_arg[1]))
+      dirname(
+        sub(
+          "^--file=",
+          "",
+          file_arg[1]
+        )
+      )
     )
   }
-  
+
   frames <- sys.frames()
-  
+
   for (frame in frames) {
+
     if (!is.null(frame$ofile)) {
+
       candidates <- c(
         candidates,
         dirname(frame$ofile)
       )
     }
   }
-  
+
   candidates <- unique(
     normalizePath(
       candidates,
@@ -124,56 +139,53 @@ find_repo_root <- function() {
       mustWork = FALSE
     )
   )
-  
+
   for (candidate in candidates) {
-    
+
     current <- candidate
-    
+
     repeat {
-      
+
       target <- file.path(
         current,
         "revision",
-        "data",
+        "figures",
         source_filename
       )
-      
+
       if (file.exists(target)) {
         return(current)
       }
-      
+
       parent <- dirname(current)
-      
+
       if (identical(parent, current)) {
         break
       }
-      
+
       current <- parent
     }
   }
-  
+
   stop(
-    "Repository root not found. Expected ",
-    "revision/data/",
+    "Repository root or regression results workbook not found.\n",
+    "Expected revision/figures/",
     source_filename,
-    ". Run from the repository, source the script, ",
-    "or set SMR_REPO_ROOT."
+    "\nRun the Supplementary Tables S14-S15 script first."
   )
 }
 
 repo_root <- find_repo_root()
 
-input_file <- file.path(
-  repo_root,
-  "revision",
-  "data",
-  source_filename
-)
-
 output_dir <- file.path(
   repo_root,
   "revision",
   "figures"
+)
+
+input_file <- file.path(
+  output_dir,
+  source_filename
 )
 
 dir.create(
@@ -183,434 +195,226 @@ dir.create(
 )
 
 cat("\nRepository root:\n", repo_root, "\n")
+
 cat("\nInput workbook:\n", input_file, "\n")
+
 cat("\nOutput directory:\n", output_dir, "\n")
 
 
-# 3. IMPORT ------------------------------------------------------
+# ================================================================
+# 3. IMPORT VALIDATED REGRESSION RESULTS
+# ================================================================
 
-sheets <- readxl::excel_sheets(input_file)
-
-sheet_name <- if ("Source data" %in% sheets) {
-  "Source data"
-} else {
-  sheets[1]
-}
-
-raw <- readxl::read_excel(
-  input_file,
-  sheet = sheet_name
+required_sheets <- c(
+  "Adjusted odds ratios",
+  "Model audit",
+  "Sample audit",
+  "Region audit",
+  "Excluded region",
+  "Excluded enrichment",
+  "table_S14"
 )
 
-names(raw) <- gsub(
-  "_$",
-  "",
-  gsub(
-    "[^a-z0-9]+",
-    "_",
-    tolower(names(raw))
+available_sheets <- readxl::excel_sheets(
+  input_file
+)
+
+missing_sheets <- setdiff(
+  required_sheets,
+  available_sheets
+)
+
+if (length(missing_sheets) > 0) {
+
+  stop(
+    "Missing required worksheets: ",
+    paste(
+      missing_sheets,
+      collapse = ", "
+    )
+  )
+}
+
+coefficients <- as.data.frame(
+  readxl::read_excel(
+    input_file,
+    sheet = "Adjusted odds ratios"
   )
 )
 
-if (
-  !"neutron_spectrum" %in% names(raw) &&
-  "neturon_spectrum" %in% names(raw)
-) {
-  raw$neutron_spectrum <- raw$neturon_spectrum
-}
+model_audit <- as.data.frame(
+  readxl::read_excel(
+    input_file,
+    sheet = "Model audit"
+  )
+)
 
-required <- c(
-  "design",
-  "region_cn_ru",
-  "microreactor",
-  "neutron_spectrum",
-  "fuel_type",
-  "fuel_enrichment",
-  "financing",
-  "supply_chain",
-  "fuel_supply",
-  "licensing",
-  "siting"
+sample_audit <- as.data.frame(
+  readxl::read_excel(
+    input_file,
+    sheet = "Sample audit"
+  )
+)
+
+region_audit <- as.data.frame(
+  readxl::read_excel(
+    input_file,
+    sheet = "Region audit"
+  )
+)
+
+excluded_region <- as.data.frame(
+  readxl::read_excel(
+    input_file,
+    sheet = "Excluded region"
+  )
+)
+
+excluded_enrichment <- as.data.frame(
+  readxl::read_excel(
+    input_file,
+    sheet = "Excluded enrichment"
+  )
+)
+
+table_s14 <- as.data.frame(
+  readxl::read_excel(
+    input_file,
+    sheet = "table_S14"
+  )
+)
+
+
+# ================================================================
+# 4. VALIDATE MODEL RESULTS
+# ================================================================
+
+required_columns <- c(
+  "sample",
+  "outcome",
+  "n",
+  "predictor",
+  "term_label",
+  "odds_ratio",
+  "ci_low",
+  "ci_high",
+  "p_wald"
 )
 
 missing_columns <- setdiff(
-  required,
-  names(raw)
+  required_columns,
+  names(coefficients)
 )
 
 if (length(missing_columns) > 0) {
+
   stop(
-    "Missing required columns: ",
-    paste(missing_columns, collapse = ", ")
-  )
-}
-
-if (
-  !"water_cooled" %in% names(raw) &&
-  !"cooling_type" %in% names(raw)
-) {
-  stop("Missing cooling classification.")
-}
-
-if ("edition" %in% names(raw)) {
-  raw <- raw[
-    as.character(raw$edition) == "4",
-    ,
-    drop = FALSE
-  ]
-}
-
-raw <- raw[
-  !is.na(raw$design) &
-    trimws(as.character(raw$design)) != "" &
-    toupper(trimws(as.character(raw$design))) != "DF-CDE",
-  ,
-  drop = FALSE
-]
-
-if (anyDuplicated(
-  toupper(trimws(as.character(raw$design)))
-)) {
-  stop("Duplicate reactor design identifiers detected.")
-}
-
-if (nrow(raw) != 91) {
-  stop(
-    "Expected 91 Edition 4 designs; found ",
-    nrow(raw)
-  )
-}
-
-cat("\nImported designs:", nrow(raw), "\n")
-
-
-# 4. CLEANING FUNCTIONS -----------------------------------------
-
-clean_text <- function(x) {
-  
-  z <- stringr::str_squish(
-    gsub(
-      "\u00a0",
-      " ",
-      as.character(x),
-      fixed = TRUE
+    "Missing regression columns: ",
+    paste(
+      missing_columns,
+      collapse = ", "
     )
   )
-  
-  z[z %in% c("", "NA", "N/A")] <- NA_character_
-  
-  z
 }
 
-clean_binary <- function(x) {
-  
-  z <- toupper(clean_text(x))
-  
-  dplyr::case_when(
-    z %in% c(
-      "TRUE", "T", "1", "YES", "Y"
-    ) ~ TRUE,
-    
-    z %in% c(
-      "FALSE", "F", "0", "NO", "N"
-    ) ~ FALSE,
-    
-    TRUE ~ NA
+stopifnot(
+
+  nrow(coefficients) == 90,
+
+  nrow(model_audit) == 40,
+
+  all(
+    model_audit$status == "Converged"
+  ),
+
+  nrow(table_s14) == 90,
+
+  nrow(excluded_region) == 2,
+
+  nrow(excluded_enrichment) == 4,
+
+  all(
+    is.finite(coefficients$odds_ratio)
+  ),
+
+  all(
+    is.finite(coefficients$ci_low)
+  ),
+
+  all(
+    is.finite(coefficients$ci_high)
+  ),
+
+  all(
+    coefficients$odds_ratio > 0
+  ),
+
+  all(
+    coefficients$ci_low > 0
+  ),
+
+  all(
+    coefficients$ci_high >=
+      coefficients$ci_low
+  ),
+
+  all(
+    coefficients$odds_ratio >=
+      coefficients$ci_low
+  ),
+
+  all(
+    coefficients$odds_ratio <=
+      coefficients$ci_high
   )
-}
-
-normalise_region <- function(x) {
-  
-  z <- tolower(clean_text(x))
-  
-  z <- gsub(
-    "[_/-]+",
-    " ",
-    z
-  )
-  
-  stringr::str_squish(z)
-}
-
-
-# 5. REGIONAL HARMONISATION -------------------------------------
-
-region_raw <- normalise_region(
-  raw$region_cn_ru
 )
 
-region_harmonised <- dplyr::case_when(
-  
-  region_raw == "north america" ~
-    "North America",
-  
-  region_raw == "europe" ~
-    "Europe",
-  
-  region_raw == "oecd asia" ~
-    "OECD Asia",
-  
-  region_raw %in% c(
-    "china russia",
-    "china and russia"
-  ) ~ "China/Russia",
-  
-  region_raw %in% c(
-    "row",
-    "rest of world",
-    "rest of the world"
-  ) ~ "Rest of world",
-  
-  TRUE ~ NA_character_
-)
-
-if (anyNA(region_harmonised)) {
-  
-  print(
-    table(
-      raw$region_cn_ru[
-        is.na(region_harmonised)
-      ],
-      useNA = "ifany"
-    )
-  )
-  
-  stop("Unrecognised regional classification.")
-}
-
-region_counts <- table(region_harmonised)
-
-expected_regions <- c(
-  "North America" = 40,
-  "Europe" = 26,
-  "OECD Asia" = 12,
-  "China/Russia" = 11,
-  "Rest of world" = 2
-)
-
-if (!isTRUE(all.equal(
-  unname(as.integer(
-    region_counts[names(expected_regions)]
-  )),
-  unname(as.integer(expected_regions))
-))) {
-  stop("Regional counts differ from verified workbook.")
-}
-
-cat("\nVerified regional counts:\n")
-print(region_counts)
-
-
-# 6. TECHNOLOGICAL HARMONISATION --------------------------------
-
-if ("water_cooled" %in% names(raw)) {
-  
-  water <- clean_binary(raw$water_cooled)
-  
-} else {
-  
-  cooling_raw <- tolower(
-    clean_text(raw$cooling_type)
-  )
-  
-  water <- dplyr::case_when(
-    cooling_raw == "water" ~ TRUE,
-    !is.na(cooling_raw) ~ FALSE,
-    TRUE ~ NA
-  )
-}
-
-df <- raw %>%
-  dplyr::mutate(
-    
-    design = clean_text(design),
-    
-    # Use harmonised region, not the original region column.
-    region = .env$region_harmonised,
-    
-    microreactor = clean_binary(microreactor),
-    
-    spectrum = dplyr::case_when(
-      tolower(clean_text(neutron_spectrum)) ==
-        "thermal" ~ "Thermal",
-      
-      tolower(clean_text(neutron_spectrum)) ==
-        "fast" ~ "Fast",
-      
-      TRUE ~ NA_character_
-    ),
-    
-    fuel_type = dplyr::case_when(
-      tolower(clean_text(fuel_type)) ==
-        "uranium" ~ "Uranium",
-      
-      tolower(clean_text(fuel_type)) ==
-        "triso" ~ "TRISO",
-      
-      tolower(clean_text(fuel_type)) ==
-        "other" ~ "Other",
-      
-      TRUE ~ NA_character_
-    ),
-    
-    enrichment = dplyr::case_when(
-      toupper(clean_text(fuel_enrichment)) ==
-        "LEU" ~ "LEU",
-      
-      toupper(clean_text(fuel_enrichment)) ==
-        "HALEU" ~ "HALEU",
-      
-      tolower(clean_text(fuel_enrichment)) %in%
-        c("not_required", "not required") ~
-        "Not required",
-      
-      TRUE ~ NA_character_
-    ),
-    
-    water_cooled = .env$water,
-    
-    cooling = dplyr::case_when(
-      water_cooled == TRUE ~ "Water",
-      water_cooled == FALSE ~ "Non-water",
-      TRUE ~ NA_character_
-    ),
-    
-    dplyr::across(
-      dplyr::all_of(c(
-        "financing",
-        "supply_chain",
-        "fuel_supply",
-        "licensing",
-        "siting"
-      )),
-      ~ suppressWarnings(
-        as.numeric(as.character(.x))
-      )
-    )
-  )
-
-if (anyNA(df$microreactor)) {
-  stop("Unrecognised microreactor classifications.")
-}
-
-if (sum(!df$microreactor) != 53) {
-  stop("Expected 53 conventional SMRs before exclusions.")
-}
-
-
-# 7. REGRESSION SAMPLES -----------------------------------------
-
-excluded <- df %>%
-  dplyr::filter(
-    region == "Rest of world"
-  )
-
-cat("\nExcluded Rest-of-world designs:\n")
-
-print(
-  excluded %>%
-    dplyr::select(
-      design,
-      region,
-      microreactor
-    )
-)
-
-if (nrow(excluded) != 2) {
-  stop("Expected exactly two Rest-of-world designs.")
-}
-
-df <- df %>%
-  dplyr::filter(
-    region != "Rest of world"
-  ) %>%
-  dplyr::mutate(
-    
-    region = factor(
-      region,
-      levels = c(
-        "North America",
-        "Europe",
-        "OECD Asia",
-        "China/Russia"
-      )
-    ),
-    
-    cooling = factor(
-      cooling,
-      levels = c(
-        "Water",
-        "Non-water"
-      )
-    ),
-    
-    spectrum = factor(
-      spectrum,
-      levels = c(
-        "Thermal",
-        "Fast"
-      )
-    ),
-    
-    fuel_type = factor(
-      fuel_type,
-      levels = c(
-        "Uranium",
-        "TRISO",
-        "Other"
-      )
-    ),
-    
-    enrichment = factor(
-      enrichment,
-      levels = c(
-        "LEU",
-        "HALEU",
-        "Not required"
-      )
-    )
-  )
-
-samples <- list(
-  
-  "All designs" = df,
-  
-  "Conventional SMRs" = df %>%
-    dplyr::filter(
-      microreactor == FALSE
-    )
+expected_samples <- c(
+  "all_designs",
+  "conventional"
 )
 
 expected_n <- c(
-  "All designs" = 89,
-  "Conventional SMRs" = 51
+  all_designs = 85,
+  conventional = 51
 )
 
-actual_n <- vapply(
-  samples,
-  nrow,
-  integer(1)
-)
+stopifnot(
 
-cat("\nRegression sample sizes:\n")
-print(actual_n)
+  setequal(
+    unique(coefficients$sample),
+    expected_samples
+  ),
 
-if (!isTRUE(all.equal(
-  unname(actual_n),
-  unname(expected_n)
-))) {
-  stop(
-    "Unexpected sample sizes: ",
-    paste(
-      names(actual_n),
-      actual_n,
-      collapse = "; "
-    )
+  sum(
+    coefficients$sample == "all_designs"
+  ) == 45,
+
+  sum(
+    coefficients$sample == "conventional"
+  ) == 45,
+
+  all(
+    coefficients$n[
+      coefficients$sample == "all_designs"
+    ] == 85
+  ),
+
+  all(
+    coefficients$n[
+      coefficients$sample == "conventional"
+    ] == 51
   )
-}
+)
+
+cat("\nALL 40 MODELS PASSED VALIDATION.\n")
+
+cat("\nALL 90 REGRESSION COEFFICIENTS AVAILABLE.\n")
 
 
-# 8. MODEL SPECIFICATION ----------------------------------------
+# ================================================================
+# 5. OUTCOME AND PREDICTOR LABELS
+# ================================================================
 
 outcomes <- c(
   "financing",
@@ -628,638 +432,798 @@ outcome_labels <- c(
   siting = "Siting"
 )
 
-predictors <- c(
-  "region",
-  "cooling",
-  "spectrum",
-  "fuel_type",
-  "enrichment"
+sample_labels <- c(
+  all_designs = "All designs",
+  conventional = "Conventional SMRs"
 )
-
-combined_formula <- stats::reformulate(
-  predictors,
-  response = "y"
-)
-
-
-# 9. COMBINED ORDINAL MODEL FUNCTION ----------------------------
-
-fit_combined <- function(
-    source,
-    outcome,
-    sample_name
-) {
-  
-  needed <- c(
-    outcome,
-    predictors
-  )
-  
-  complete <- stats::complete.cases(
-    source[, needed, drop = FALSE]
-  )
-  
-  dat <- droplevels(
-    source[complete, , drop = FALSE]
-  )
-  
-  if (any(
-    !is.na(dat[[outcome]]) &
-    !(dat[[outcome]] %in% 1:6)
-  )) {
-    stop(
-      "Unexpected readiness score: ",
-      outcome
-    )
-  }
-  
-  dat$y <- ordered(
-    dat[[outcome]],
-    levels = 1:6
-  )
-  
-  xmat <- stats::model.matrix(
-    stats::reformulate(predictors),
-    data = dat
-  )
-  
-  if (
-    nrow(dat) < 20 ||
-    qr(xmat)$rank < ncol(xmat)
-  ) {
-    stop(
-      "Insufficient cases or rank-deficient model: ",
-      sample_name, " / ", outcome
-    )
-  }
-  
-  model_warnings <- character(0)
-  
-  fit <- withCallingHandlers(
-    
-    ordinal::clm(
-      combined_formula,
-      data = dat,
-      link = "logit",
-      Hess = TRUE,
-      control = ordinal::clm.control(
-        maxIter = 200
-      )
-    ),
-    
-    warning = function(w) {
-      
-      model_warnings <<- c(
-        model_warnings,
-        conditionMessage(w)
-      )
-      
-      invokeRestart("muffleWarning")
-    }
-  )
-  
-  cv <- fit$convergence
-  
-  code <- suppressWarnings(
-    as.integer(
-      if (is.list(cv)) {
-        cv[[1L]]
-      } else {
-        cv[1L]
-      }
-    )
-  )
-  
-  if (length(code) != 1L || is.na(code)) {
-    code <- NA_integer_
-  }
-  
-  hessian_condition <- if (
-    length(fit$cond.H) == 1L
-  ) {
-    as.numeric(fit$cond.H)
-  } else {
-    NA_real_
-  }
-  
-  status <- if (
-    !is.na(code) &&
-    code == 0L &&
-    is.finite(hessian_condition) &&
-    hessian_condition < 1e8 &&
-    all(is.finite(fit$beta)) &&
-    length(model_warnings) == 0
-  ) {
-    "OK"
-  } else {
-    "Review diagnostics"
-  }
-  
-  diagnostic <- data.frame(
-    sample = sample_name,
-    outcome = outcome,
-    n = nrow(dat),
-    convergence_code = code,
-    hessian_condition = hessian_condition,
-    warnings = paste(
-      unique(model_warnings),
-      collapse = " | "
-    ),
-    status = status
-  )
-  
-  mat <- coef(summary(fit))
-  
-  rows <- lapply(
-    names(fit$beta),
-    function(term) {
-      
-      beta <- unname(
-        mat[term, "Estimate"]
-      )
-      
-      se <- unname(
-        mat[term, "Std. Error"]
-      )
-      
-      data.frame(
-        sample = sample_name,
-        outcome = outcome,
-        term = term,
-        n = nrow(dat),
-        beta = beta,
-        se = se,
-        odds_ratio = exp(beta),
-        ci_low = exp(beta - 1.96 * se),
-        ci_high = exp(beta + 1.96 * se),
-        p_value = 2 * stats::pnorm(
-          abs(beta / se),
-          lower.tail = FALSE
-        ),
-        status = status
-      )
-    }
-  )
-  
-  list(
-    coefficients = dplyr::bind_rows(rows),
-    diagnostic = diagnostic
-  )
-}
-
-
-# 10. RUN COMBINED MODELS ---------------------------------------
-
-results <- list()
-
-for (s in names(samples)) {
-  
-  for (o in outcomes) {
-    
-    cat(
-      "\nFitting M3 combined:",
-      s, "/", o, "\n"
-    )
-    
-    key <- paste(s, o, sep = "__")
-    
-    results[[key]] <- fit_combined(
-      samples[[s]],
-      o,
-      s
-    )
-  }
-}
-
-coef_df <- dplyr::bind_rows(
-  lapply(results, `[[`, "coefficients")
-)
-
-diagnostics_df <- dplyr::bind_rows(
-  lapply(results, `[[`, "diagnostic")
-)
-
-cat("\nMODEL DIAGNOSTICS:\n")
-print(diagnostics_df, row.names = FALSE)
-
-
-# 11. PREPARE FOREST PLOT DATA ----------------------------------
 
 term_labels <- c(
   "regionEurope" = "Europe",
   "regionOECD Asia" = "OECD Asia",
   "regionChina/Russia" = "China/Russia",
-  "coolingNon-water" = "Non-water-cooled",
-  "spectrumFast" = "Fast spectrum",
-  "fuel_typeTRISO" = "TRISO fuel",
-  "fuel_typeOther" = "Other fuel",
+  "coolingNon-water-cooled" = "Non-water-cooled",
+  "spectrumFast" = "Fast-spectrum",
+  "fuelTRISO" = "TRISO fuel",
+  "fuelOther" = "Other fuel",
   "enrichmentHALEU" = "HALEU",
   "enrichmentNot required" = "Enrichment not required"
 )
 
 plot_order <- c(
-  "China/Russia",
-  "OECD Asia",
-  "Europe",
-  "Non-water-cooled",
-  "Fast spectrum",
-  "TRISO fuel",
-  "Other fuel",
+  "Enrichment not required",
   "HALEU",
-  "Enrichment not required"
+  "Other fuel",
+  "TRISO fuel",
+  "Fast-spectrum",
+  "Non-water-cooled",
+  "Europe",
+  "OECD Asia",
+  "China/Russia"
 )
 
-plot_df <- coef_df %>%
-  dplyr::filter(
-    status == "OK",
-    is.finite(odds_ratio),
-    is.finite(ci_low),
-    is.finite(ci_high),
-    odds_ratio > 0,
-    ci_low > 0,
-    ci_high > 0
-  ) %>%
-  dplyr::mutate(
-    
-    label = unname(
-      term_labels[term]
-    ),
-    
-    label = ifelse(
-      is.na(label),
-      term,
-      label
-    ),
-    
-    label = factor(
-      label,
-      levels = rev(plot_order)
-    ),
-    
-    outcome = factor(
-      outcome,
-      levels = outcomes,
-      labels = unname(
-        outcome_labels[outcomes]
+
+# ================================================================
+# 6. COEFFICIENT COMPLETENESS AUDIT
+# ================================================================
+
+for (sample_id in expected_samples) {
+
+  for (outcome_id in outcomes) {
+
+    df <- coefficients[
+      coefficients$sample == sample_id &
+        coefficients$outcome == outcome_id,
+      ,
+      drop = FALSE
+    ]
+
+    stopifnot(
+
+      nrow(df) == 9,
+
+      !anyDuplicated(df$predictor),
+
+      setequal(
+        df$predictor,
+        names(term_labels)
+      ),
+
+      all(
+        df$n == expected_n[[sample_id]]
+      ),
+
+      all(
+        df$term_label ==
+          unname(
+            term_labels[df$predictor]
+          )
       )
-    )
-  )
-
-if (nrow(plot_df) == 0) {
-  stop("No valid combined-model estimates.")
-}
-
-expected_outcomes <- unname(
-  outcome_labels[outcomes]
-)
-
-for (s in names(samples)) {
-  
-  present <- unique(
-    as.character(
-      plot_df$outcome[
-        plot_df$sample == s
-      ]
-    )
-  )
-  
-  missing_outcomes <- setdiff(
-    expected_outcomes,
-    present
-  )
-  
-  if (length(missing_outcomes) > 0) {
-    stop(
-      "Cannot produce complete figure for ",
-      s, ". Missing outcomes: ",
-      paste(missing_outcomes, collapse = ", "),
-      ". Review model diagnostics."
     )
   }
 }
 
+combined_model_audit <- model_audit[
+  model_audit$specification == "M3_combined",
+  ,
+  drop = FALSE
+]
 
-# 12. FOREST PLOT FUNCTION --------------------------------------
+stopifnot(
 
-make_forest <- function(sample_name, panel_label) {
-  
-  dat <- plot_df %>%
-    dplyr::filter(
-      sample == sample_name
+  nrow(combined_model_audit) == 10,
+
+  all(
+    combined_model_audit$status == "Converged"
+  ),
+
+  !anyDuplicated(
+    paste(
+      combined_model_audit$sample,
+      combined_model_audit$outcome,
+      sep = "__"
     )
-  
-  n_sample <- unname(actual_n[sample_name])
-  
-  figure_heading <- paste0(
-    "(",
-    panel_label,
-    ") ",
-    sample_name,
-    " (n = ",
-    n_sample,
-    ")"
   )
-  
-  ggplot2::ggplot(
-    dat,
-    ggplot2::aes(
-      x = odds_ratio,
-      y = label
+)
+
+for (sample_id in expected_samples) {
+
+  df <- combined_model_audit[
+    combined_model_audit$sample == sample_id,
+    ,
+    drop = FALSE
+  ]
+
+  stopifnot(
+
+    nrow(df) == 5,
+
+    setequal(
+      df$outcome,
+      outcomes
+    ),
+
+    all(
+      df$n == expected_n[[sample_id]]
     )
-  ) +
-    
+  )
+}
+
+
+# ================================================================
+# 7. VERIFY CONSISTENCY WITH SUPPLEMENTARY TABLE S14
+# ================================================================
+
+required_table_columns <- c(
+  "Sample",
+  "Readiness dimension",
+  "Predictor",
+  "n",
+  "Adjusted OR",
+  "95% CI lower",
+  "95% CI upper",
+  "Wald p"
+)
+
+stopifnot(
+  all(
+    required_table_columns %in%
+      names(table_s14)
+  )
+)
+
+coefficient_keys <- paste(
+
+  unname(
+    sample_labels[coefficients$sample]
+  ),
+
+  unname(
+    outcome_labels[coefficients$outcome]
+  ),
+
+  coefficients$term_label,
+
+  sep = "__"
+)
+
+table_keys <- paste(
+
+  table_s14$Sample,
+
+  table_s14[["Readiness dimension"]],
+
+  table_s14$Predictor,
+
+  sep = "__"
+)
+
+stopifnot(
+
+  !anyDuplicated(coefficient_keys),
+
+  !anyDuplicated(table_keys),
+
+  setequal(
+    coefficient_keys,
+    table_keys
+  )
+)
+
+matched_rows <- match(
+  coefficient_keys,
+  table_keys
+)
+
+stopifnot(
+  !anyNA(matched_rows)
+)
+
+matched_table <- table_s14[
+  matched_rows,
+  ,
+  drop = FALSE
+]
+
+compare_numeric <- function(x, y) {
+
+  isTRUE(
+    all.equal(
+      as.numeric(x),
+      as.numeric(y),
+      tolerance = 1e-10,
+      check.attributes = FALSE
+    )
+  )
+}
+
+stopifnot(
+
+  compare_numeric(
+    coefficients$n,
+    matched_table$n
+  ),
+
+  compare_numeric(
+    coefficients$odds_ratio,
+    matched_table[["Adjusted OR"]]
+  ),
+
+  compare_numeric(
+    coefficients$ci_low,
+    matched_table[["95% CI lower"]]
+  ),
+
+  compare_numeric(
+    coefficients$ci_high,
+    matched_table[["95% CI upper"]]
+  ),
+
+  compare_numeric(
+    coefficients$p_wald,
+    matched_table[["Wald p"]]
+  )
+)
+
+cat(
+  "\nFIGURE DATA VERIFIED AGAINST SUPPLEMENTARY TABLE S14.\n"
+)
+
+
+# ================================================================
+# 8. RECONSTRUCT PLOTTING DATA
+# ================================================================
+
+plot_data <- as.data.frame(
+  coefficients
+)
+
+plot_data$term_label <- factor(
+  plot_data$term_label,
+  levels = plot_order
+)
+
+plot_data$outcome <- factor(
+  plot_data$outcome,
+  levels = outcomes,
+  labels = unname(
+    outcome_labels
+  )
+)
+
+recovery_data <- as.data.frame(
+  plot_data
+)
+
+stopifnot(
+
+  nrow(recovery_data) == 90,
+
+  !anyNA(
+    recovery_data$term_label
+  ),
+
+  !anyNA(
+    recovery_data$outcome
+  ),
+
+  all(
+    is.finite(recovery_data$odds_ratio)
+  ),
+
+  all(
+    is.finite(recovery_data$ci_low)
+  ),
+
+  all(
+    is.finite(recovery_data$ci_high)
+  ),
+
+  all(
+    recovery_data$ci_low > 0
+  )
+)
+
+
+# ================================================================
+# 9. RECONSTRUCT PANELS
+# SUCCESSFUL JAG FIGURE RECOVERY SPECIFICATION
+# ================================================================
+
+recover_panel <- function(
+    sample_id,
+    title_text
+) {
+
+  df <- recovery_data[
+    recovery_data$sample == sample_id,
+    ,
+    drop = FALSE
+  ]
+
+  stopifnot(
+    nrow(df) == 45
+  )
+
+  ggplot2::ggplot(df) +
+
     ggplot2::geom_vline(
       xintercept = 1,
       linetype = "dashed",
-      colour = "grey45",
-      linewidth = 0.35
+      colour = "grey50",
+      linewidth = 0.3
     ) +
-    
+
     ggplot2::geom_segment(
       ggplot2::aes(
         x = ci_low,
         xend = ci_high,
-        yend = label
+        y = term_label,
+        yend = term_label
       ),
-      colour = "#4C78A8",
-      linewidth = 0.55
+      colour = "#527FB1",
+      linewidth = 0.35
     ) +
-    
+
     ggplot2::geom_point(
-      colour = "#4C78A8",
-      size = 2.1
+      ggplot2::aes(
+        x = odds_ratio,
+        y = term_label
+      ),
+      shape = 16,
+      colour = "#527FB1",
+      size = 1.2
     ) +
-    
-    ggplot2::scale_x_log10() +
-    
+
+    ggplot2::scale_x_log10(
+      breaks = c(
+        0.001,
+        0.01,
+        0.1,
+        1,
+        10,
+        100,
+        1000
+      ),
+      labels = scales::label_number()
+    ) +
+
     ggplot2::facet_wrap(
       ~ outcome,
-      ncol = 3
+      ncol = 3,
+      drop = FALSE,
+      scales = "free_x"
     ) +
-    
+
     ggplot2::labs(
-      title = figure_heading,
+      title = title_text,
       x = "Adjusted odds ratio (log scale)",
       y = NULL
     ) +
-    
-    ggplot2::theme_classic(
-      base_size = 10
+
+    ggplot2::theme_bw(
+      base_size = 7
     ) +
-    
+
     ggplot2::theme(
-      
+
+      panel.grid = ggplot2::element_blank(),
+
+      panel.border = ggplot2::element_blank(),
+
+      axis.line.x = ggplot2::element_line(
+        colour = "grey35",
+        linewidth = 0.3
+      ),
+
+      axis.line.y = ggplot2::element_line(
+        colour = "grey35",
+        linewidth = 0.3
+      ),
+
+      strip.background = ggplot2::element_rect(
+        fill = "white",
+        colour = "grey50",
+        linewidth = 0.3
+      ),
+
+      strip.text = ggplot2::element_text(
+        face = "bold"
+      ),
+
       plot.title = ggplot2::element_text(
         face = "bold",
-        size = 14,
-        colour = "black",
         hjust = 0.5,
-        margin = ggplot2::margin(b = 14)
+        size = 9
       ),
-      
-      strip.background =
-        ggplot2::element_rect(
-          fill = "white",
-          colour = "black",
-          linewidth = 0.35
-        ),
-      
-      strip.text =
-        ggplot2::element_text(
-          face = "bold",
-          size = 10,
-          colour = "black"
-        ),
-      
-      axis.text.x =
-        ggplot2::element_text(
-          size = 8,
-          colour = "black"
-        ),
-      
-      axis.text.y =
-        ggplot2::element_text(
-          size = 9,
-          colour = "black"
-        ),
-      
-      axis.title.x =
-        ggplot2::element_text(
-          size = 10,
-          colour = "black",
-          margin = ggplot2::margin(t = 10)
-        ),
-      
-      axis.line =
-        ggplot2::element_line(
-          colour = "grey35",
-          linewidth = 0.3
-        ),
-      
-      axis.ticks =
-        ggplot2::element_line(
-          colour = "grey35",
-          linewidth = 0.3
-        ),
-      
-      panel.grid =
-        ggplot2::element_blank(),
-      
-      panel.spacing =
-        grid::unit(10, "mm"),
-      
-      plot.background =
-        ggplot2::element_rect(
-          fill = "white",
-          colour = NA
-        ),
-      
-      plot.margin =
-        ggplot2::margin(
-          12, 12, 12, 12
-        )
+
+      axis.text.y = ggplot2::element_text(
+        size = 7
+      ),
+
+      axis.text.x = ggplot2::element_text(
+        size = 6
+      ),
+
+      panel.spacing = grid::unit(
+        2.5,
+        "mm"
+      )
     )
 }
 
 
-# 13. CREATE SEPARATE FIGURES -----------------------------------
+# ================================================================
+# 10. SUPPLEMENTARY FIGURE S3(a)
+# ALL DESIGNS
+# ================================================================
 
-figure_s03 <- make_forest(
-  sample_name = "All designs",
-  panel_label = "a"
+recovered_a <- recover_panel(
+
+  "all_designs",
+
+  "(a) All designs (n = 85)"
 )
 
-figure_s04 <- make_forest(
-  sample_name = "Conventional SMRs",
-  panel_label = "b"
+
+# ================================================================
+# 11. SUPPLEMENTARY FIGURE S3(b)
+# CONVENTIONAL SMRs
+# ================================================================
+
+recovered_b <- recover_panel(
+
+  "conventional",
+
+  "(b) Conventional SMRs (n = 51)"
 )
 
-print(figure_s03)
-print(figure_s04)
 
+# ================================================================
+# 12. EXPORT USING FRESH GRAPHICS DEVICES
+# ================================================================
 
-# 14. EXPORT FUNCTION -------------------------------------------
+export_recovered <- function(
+    plot,
+    filename
+) {
 
-export_figure <- function(plot, filename) {
-  
-  png_file <- file.path(
-    output_dir,
-    paste0(filename, ".png")
-  )
-  
   pdf_file <- file.path(
     output_dir,
-    paste0(filename, ".pdf")
+    paste0(
+      filename,
+      ".pdf"
+    )
   )
-  
-  ggplot2::ggsave(
-    filename = png_file,
-    plot = plot,
-    width = 280,
-    height = 135,
-    units = "mm",
-    dpi = 600,
-    bg = "white"
+
+  png_file <- file.path(
+    output_dir,
+    paste0(
+      filename,
+      ".png"
+    )
   )
-  
+
   ggplot2::ggsave(
+
     filename = pdf_file,
+
     plot = plot,
-    width = 280,
-    height = 135,
+
+    width = 180,
+
+    height = 145,
+
     units = "mm",
-    device = grDevices::cairo_pdf,
+
+    device = grDevices::pdf,
+
     bg = "white"
   )
-  
-  for (f in c(png_file, pdf_file)) {
-    
+
+  ggplot2::ggsave(
+
+    filename = png_file,
+
+    plot = plot,
+
+    width = 180,
+
+    height = 145,
+
+    units = "mm",
+
+    dpi = 600,
+
+    bg = "white"
+  )
+
+  for (f in c(pdf_file, png_file)) {
+
     if (
       !file.exists(f) ||
       is.na(file.info(f)$size) ||
       file.info(f)$size == 0
     ) {
-      stop("Missing or empty output: ", f)
+
+      stop(
+        "Missing or empty figure output: ",
+        f
+      )
     }
   }
-  
-  invisible(c(png_file, pdf_file))
+
+  invisible(
+    c(
+      pdf_file,
+      png_file
+    )
+  )
 }
 
 
-# 15. EXPORT FIGURE S3(a) ---------------------------------------
+# ================================================================
+# 13. EXPORT SUPPLEMENTARY FIGURE S3(a)
+# ================================================================
 
-files_s03 <- export_figure(
-  figure_s03,
+files_s03 <- export_recovered(
+
+  recovered_a,
+
   "supp_fig_S03_joint_regional_technological_all_designs"
 )
 
 
-# 16. EXPORT FIGURE S3(b) ---------------------------------------
+# ================================================================
+# 14. EXPORT SUPPLEMENTARY FIGURE S3(b)
+# ================================================================
 
-files_s04 <- export_figure(
-  figure_s04,
+files_s04 <- export_recovered(
+
+  recovered_b,
+
   "supp_fig_S04_joint_regional_technological_conventional_smrs"
 )
 
 
-# 17. EXPORT MODEL VERIFICATION ---------------------------------
+# ================================================================
+# 15. EXPORT MODEL VERIFICATION WORKBOOK
+# ================================================================
 
 excel_file <- file.path(
+
   output_dir,
+
   "supp_fig_S03_S04_model_verification.xlsx"
+)
+
+figure_audit <- data.frame(
+
+  Figure = c(
+    "Supplementary Figure S3(a)",
+    "Supplementary Figure S3(b)"
+  ),
+
+  Sample = c(
+    "All designs",
+    "Conventional SMRs"
+  ),
+
+  n = c(
+    85,
+    51
+  ),
+
+  Readiness_dimensions = c(
+    5,
+    5
+  ),
+
+  Coefficients = c(
+    45,
+    45
+  ),
+
+  Model_status = c(
+    "Converged",
+    "Converged"
+  ),
+
+  Table_S14_consistency = c(
+    "Verified",
+    "Verified"
+  )
+)
+
+excel_tables <- list(
+
+  "Model diagnostics" = combined_model_audit,
+
+  "Adjusted odds ratios" = coefficients,
+
+  "Figure data" = recovery_data,
+
+  "Regional counts" = region_audit,
+
+  "Excluded designs" = excluded_region,
+
+  "Excluded enrichment" = excluded_enrichment,
+
+  "Sample audit" = sample_audit,
+
+  "Full model audit" = model_audit,
+
+  "Figure audit" = figure_audit,
+
+  "Table S14 verification" = matched_table
 )
 
 wb <- openxlsx::createWorkbook()
 
-excel_tables <- list(
-  "Model diagnostics" = diagnostics_df,
-  "Adjusted odds ratios" = coef_df,
-  "Figure data" = plot_df,
-  "Regional counts" = as.data.frame(region_counts),
-  "Excluded designs" = excluded %>%
-    dplyr::select(
-      design,
-      region,
-      microreactor
-    )
-)
-
 header_style <- openxlsx::createStyle(
+
   textDecoration = "bold",
+
   fgFill = "#DCE6F1"
 )
 
 for (sheet in names(excel_tables)) {
-  
+
   dat_sheet <- as.data.frame(
     excel_tables[[sheet]]
   )
-  
-  openxlsx::addWorksheet(wb, sheet)
-  
-  openxlsx::writeData(
+
+  openxlsx::addWorksheet(
     wb,
+    sheet
+  )
+
+  openxlsx::writeData(
+
+    wb,
+
     sheet,
+
     dat_sheet,
+
     headerStyle = header_style
   )
-  
+
   openxlsx::freezePane(
+
     wb,
+
     sheet,
+
     firstRow = TRUE
   )
-  
+
+  if (
+    nrow(dat_sheet) > 0 &&
+    ncol(dat_sheet) > 0
+  ) {
+
+    openxlsx::addFilter(
+
+      wb,
+
+      sheet,
+
+      rows = 1,
+
+      cols = seq_len(
+        ncol(dat_sheet)
+      )
+    )
+  }
+
   openxlsx::setColWidths(
+
     wb,
+
     sheet,
-    cols = seq_len(ncol(dat_sheet)),
+
+    cols = seq_len(
+      ncol(dat_sheet)
+    ),
+
     widths = "auto"
   )
 }
 
 openxlsx::saveWorkbook(
+
   wb,
-  excel_file,
+
+  file = excel_file,
+
   overwrite = TRUE
 )
 
 
-# 18. FINAL VERIFICATION ----------------------------------------
+# ================================================================
+# 16. FINAL VERIFICATION
+# ================================================================
 
 output_files <- c(
+
   files_s03,
+
   files_s04,
+
   excel_file
 )
 
-for (f in output_files) {
-  
-  if (
-    !file.exists(f) ||
-    is.na(file.info(f)$size) ||
-    file.info(f)$size == 0
-  ) {
-    stop("Missing or empty output: ", f)
-  }
-}
+stopifnot(
 
-cat("\n")
-cat("====================================================\n")
-cat("SUPPLEMENTARY FIGURE S3(a) AND S3(b) COMPLETE\n")
-cat("====================================================\n")
+  length(output_files) == 5,
 
-cat("\nVerified sample sizes:\n")
-print(actual_n)
+  all(
+    file.exists(output_files)
+  ),
 
-cat("\nModel diagnostics:\n")
-print(diagnostics_df, row.names = FALSE)
+  all(
+    !is.na(
+      file.info(output_files)$size
+    )
+  ),
 
-cat("\nExported files:\n")
-cat(paste(output_files, collapse = "\n"))
+  all(
+    file.info(output_files)$size > 0
+  ),
 
-cat("\n\nOutput directory:\n")
-cat(output_dir, "\n")
+  nrow(recovery_data) == 90,
 
-cat("\nAnalysis complete.\n")
+  nrow(model_audit) == 40,
+
+  nrow(combined_model_audit) == 10,
+
+  all(
+    model_audit$status == "Converged"
+  )
+)
+
+cat("\n========================================\n")
+cat("SUPPLEMENTARY FIGURES EXPORTED\n")
+cat("========================================\n")
+
+cat("\nSAMPLE AUDIT:\n")
+
+print(
+  sample_audit,
+  row.names = FALSE
+)
+
+cat("\nFIGURE AUDIT:\n")
+
+print(
+  figure_audit,
+  row.names = FALSE
+)
+
+cat("\nCOMBINED MODEL DIAGNOSTICS:\n")
+
+print(
+  combined_model_audit,
+  row.names = FALSE
+)
+
+cat("\nOUTPUT FILES:\n")
+
+cat(
+  paste(
+    output_files,
+    collapse = "\n"
+  ),
+  "\n"
+)
+
+cat("\nFIGURE S3(a): ALL DESIGNS (n = 85).\n")
+cat("FIGURE S3(b): CONVENTIONAL SMRs (n = 51).\n")
+cat("ALL FIVE READINESS DIMENSIONS INCLUDED.\n")
+cat("ALL 90 ADJUSTED COEFFICIENTS VERIFIED.\n")
+cat("NUMERICAL CONSISTENCY WITH TABLE S14 VERIFIED.\n")
+cat("NO REGRESSION REFITTING UNDERTAKEN.\n")
+cat("PANELS EXPORTED SEPARATELY IN PDF AND PNG.\n")
+cat("FIGURE DIMENSIONS: 180 x 145 mm.\n")
+cat("PNG RESOLUTION: 600 dpi.\n")
+cat("========================================\n")
