@@ -1,4 +1,3 @@
-
 # ================================================================
 # FIGURE 8: TECHNOLOGICAL CORRELATES OF SMR MARKET READINESS
 # NEA SMR DASHBOARD, EDITION 4
@@ -77,21 +76,21 @@ find_repo_root <- function(
     start_dir = getwd(),
     target_file = SOURCE_FILE
 ) {
-  
+
   current <- normalizePath(
     start_dir,
     winslash = "/",
     mustWork = TRUE
   )
-  
+
   repeat {
-    
+
     if (file.exists(file.path(current, target_file))) {
       return(current)
     }
-    
+
     parent <- dirname(current)
-    
+
     if (identical(parent, current)) {
       stop(
         "Could not locate repository root.\n",
@@ -100,7 +99,7 @@ find_repo_root <- function(
         "Run this script from within the repository."
       )
     }
-    
+
     current <- parent
   }
 }
@@ -152,18 +151,20 @@ if (!file.exists(input_file)) {
 # ---------------------------------------------------------------
 
 clean_names <- function(x) {
-  
+
   x <- tolower(trimws(x))
   x <- gsub("[^a-z0-9]+", "_", x)
   x <- gsub("^_+|_+$", "", x)
-  
+
   make.unique(x, sep = "_")
 }
 
 normalise <- function(x) {
-  
+
   x <- tolower(trimws(as.character(x)))
-  
+
+  x <- gsub("[[:space:]]+", " ", x)
+
   x[x %in% c(
     "",
     "na",
@@ -171,7 +172,7 @@ normalise <- function(x) {
     "unknown",
     "not reported"
   )] <- NA_character_
-  
+
   x
 }
 
@@ -181,15 +182,15 @@ find_column <- function(
     description,
     required = TRUE
 ) {
-  
+
   found <- candidates[
     candidates %in% names(df)
   ]
-  
+
   if (length(found) > 0) {
     return(found[1])
   }
-  
+
   if (required) {
     stop(
       "Missing column: ", description,
@@ -199,25 +200,25 @@ find_column <- function(
       paste(names(df), collapse = ", ")
     )
   }
-  
+
   NA_character_
 }
 
 make_outcome <- function(x) {
-  
+
   x <- suppressWarnings(
     as.numeric(as.character(x))
   )
-  
+
   invalid <- !is.na(x) & !(x %in% 1:6)
-  
+
   if (any(invalid)) {
     stop(
       "Invalid ordinal readiness score. ",
       "Expected integer values from 1 to 6."
     )
   }
-  
+
   ordered(
     x,
     levels = 1:6
@@ -239,13 +240,16 @@ sheet_name <- if ("nea_50" %in% sheets) {
 
 raw <- readxl::read_excel(
   input_file,
-  sheet = sheet_name
+  sheet = sheet_name,
+  .name_repair = "unique"
 )
 
 names(raw) <- clean_names(names(raw))
 
 cat("\nSource worksheet:", sheet_name, "\n")
 cat("Imported rows:", nrow(raw), "\n")
+cat("\nImported column names:\n")
+print(names(raw))
 
 
 # ---------------------------------------------------------------
@@ -293,20 +297,25 @@ spectrum_col <- find_column(
   "Neutron spectrum"
 )
 
+# IMPORTANT:
+# Select the three-category analytical Fuel Type column.
+# Do not use Fuel Type Long or Fuel Form.
+
 fuel_col <- find_column(
   raw,
   c(
     "fuel_type_recoded",
     "fuel_type",
-    "fuel_form"
+    "fuel_type_1"
   ),
-  "Fuel type"
+  "Fuel Type (Uranium / TRISO / Other)"
 )
 
 enrichment_col <- find_column(
   raw,
   c(
     "fuel_enrichment_recode",
+    "fuel_enrichment_recoded",
     "fuel_enrich",
     "fuel_enrichment",
     "enrichment"
@@ -315,37 +324,43 @@ enrichment_col <- find_column(
 )
 
 outcome_columns <- c(
-  
+
   Financing = find_column(
     raw,
     "financing",
     "Financing"
   ),
-  
+
   `Supply chain` = find_column(
     raw,
     "supply_chain",
     "Supply chain"
   ),
-  
+
   `Fuel supply` = find_column(
     raw,
     "fuel_supply",
     "Fuel supply"
   ),
-  
+
   Licensing = find_column(
     raw,
     "licensing",
     "Licensing"
   ),
-  
+
   Siting = find_column(
     raw,
     "siting",
     "Siting"
   )
 )
+
+cat("\nSelected technological columns:\n")
+cat("Cooling:    ", cooling_col, "\n")
+cat("Spectrum:   ", spectrum_col, "\n")
+cat("Fuel type:  ", fuel_col, "\n")
+cat("Enrichment: ", enrichment_col, "\n")
 
 
 # ---------------------------------------------------------------
@@ -355,11 +370,11 @@ outcome_columns <- c(
 data <- raw
 
 if (!is.na(edition_col)) {
-  
+
   edition_values <- suppressWarnings(
     as.numeric(as.character(data[[edition_col]]))
   )
-  
+
   data <- data[
     !is.na(edition_values) &
       edition_values == 4,
@@ -399,7 +414,7 @@ cat("\nMain Figure 8 sample:", nrow(data), "designs\n")
 
 
 # ---------------------------------------------------------------
-# 7. COOLING TYPE
+# 7. REACTOR COOLING TYPE
 # ---------------------------------------------------------------
 
 # Comparison:
@@ -413,7 +428,7 @@ cooling_raw <- normalise(
 )
 
 data$cooling_group <- dplyr::case_when(
-  
+
   cooling_raw %in% c(
     "true",
     "1",
@@ -424,7 +439,7 @@ data$cooling_group <- dplyr::case_when(
     "water cooled",
     "watercooled"
   ) ~ "Water-cooled",
-  
+
   cooling_raw %in% c(
     "false",
     "0",
@@ -450,7 +465,7 @@ data$cooling_group <- dplyr::case_when(
     "heat pipe",
     "solid-state"
   ) ~ "Non-water-cooled",
-  
+
   TRUE ~ NA_character_
 )
 
@@ -478,19 +493,23 @@ spectrum_raw <- normalise(
 )
 
 data$spectrum_group <- dplyr::case_when(
-  
+
   spectrum_raw %in% c(
     "thermal",
     "thermal spectrum",
-    "thermal-spectrum"
+    "thermal-spectrum",
+    "thermal neutron spectrum",
+    "thermal-spectrum reactor"
   ) ~ "Thermal",
-  
+
   spectrum_raw %in% c(
     "fast",
     "fast spectrum",
-    "fast-spectrum"
+    "fast-spectrum",
+    "fast neutron spectrum",
+    "fast-spectrum reactor"
   ) ~ "Fast",
-  
+
   TRUE ~ NA_character_
 )
 
@@ -507,41 +526,54 @@ data$spectrum_group <- factor(
 # 9. FUEL TYPE
 # ---------------------------------------------------------------
 
-# Comparison:
+# Original analytical coding:
+# Uranium, TRISO, Other
+#
+# Figure 8 comparison:
 # Uranium versus TRISO/Other
 #
 # Reference:
 # TRISO/Other
+#
+# Fuel Type Long and Fuel Form are ignored.
 
 fuel_raw <- normalise(
   data[[fuel_col]]
 )
 
-data$fuel_group <- dplyr::case_when(
-  
+data$fuel_type_3 <- dplyr::case_when(
+
   fuel_raw %in% c(
     "uranium",
     "uranium fuel",
     "uranium-based",
-    "u",
-    "uo2",
-    "uo2 pellets",
-    "uranium dioxide",
-    "uranium nitride",
-    "metallic u-zr alloy",
-    "metallic uranium"
+    "u"
   ) ~ "Uranium",
-  
+
   fuel_raw %in% c(
     "triso",
+    "triso fuel",
     "triso pebble",
-    "triso-x pebble",
+    "triso-x pebble"
+  ) ~ "TRISO",
+
+  fuel_raw %in% c(
     "other",
-    "other fuels",
-    "molten salt fuel",
-    "mox"
+    "other fuels"
+  ) ~ "Other",
+
+  TRUE ~ NA_character_
+)
+
+data$fuel_group <- dplyr::case_when(
+
+  data$fuel_type_3 == "Uranium" ~ "Uranium",
+
+  data$fuel_type_3 %in% c(
+    "TRISO",
+    "Other"
   ) ~ "TRISO/Other",
-  
+
   TRUE ~ NA_character_
 )
 
@@ -564,34 +596,49 @@ data$fuel_group <- factor(
 # Reference:
 # LEU
 #
-# Designs coded "not_required" are excluded
-# from enrichment regressions only.
+# not_required and unresolved remain in the master sample,
+# but are excluded from enrichment regressions only.
 
 enrichment_raw <- normalise(
   data[[enrichment_col]]
 )
 
-data$enrichment_group <- dplyr::case_when(
-  
+data$enrichment_status <- dplyr::case_when(
+
   enrichment_raw %in% c(
     "leu",
     "low enriched uranium",
     "low-enriched uranium"
   ) ~ "LEU",
-  
+
   enrichment_raw %in% c(
     "haleu",
     "ha-leu",
     "ha leu",
     "high-assay low-enriched uranium"
   ) ~ "HALEU",
-  
+
   enrichment_raw %in% c(
     "not_required",
     "not required",
     "not-required"
-  ) ~ NA_character_,
-  
+  ) ~ "not_required",
+
+  enrichment_raw %in% c(
+    "unresolved",
+    "not established",
+    "undetermined"
+  ) ~ "unresolved",
+
+  TRUE ~ NA_character_
+)
+
+data$enrichment_group <- dplyr::case_when(
+
+  data$enrichment_status == "LEU" ~ "LEU",
+
+  data$enrichment_status == "HALEU" ~ "HALEU",
+
   TRUE ~ NA_character_
 )
 
@@ -609,50 +656,67 @@ data$enrichment_group <- factor(
 # ---------------------------------------------------------------
 
 coding_audit <- data.frame(
-  
+
   design = data$design_id,
-  
+
   cooling_raw = as.character(
     data[[cooling_col]]
   ),
-  
-  cooling_group = data$cooling_group,
-  
+
+  cooling_group = as.character(
+    data$cooling_group
+  ),
+
   spectrum_raw = as.character(
     data[[spectrum_col]]
   ),
-  
-  spectrum_group = data$spectrum_group,
-  
+
+  spectrum_group = as.character(
+    data$spectrum_group
+  ),
+
   fuel_raw = as.character(
     data[[fuel_col]]
   ),
-  
-  fuel_group = data$fuel_group,
-  
+
+  fuel_type_3 = data$fuel_type_3,
+
+  fuel_group = as.character(
+    data$fuel_group
+  ),
+
   enrichment_raw = as.character(
     data[[enrichment_col]]
   ),
-  
-  enrichment_group = data$enrichment_group
+
+  enrichment_status = data$enrichment_status,
+
+  enrichment_group = as.character(
+    data$enrichment_group
+  ),
+
+  stringsAsFactors = FALSE
 )
 
-if (
-  anyNA(data$cooling_group) ||
-  anyNA(data$spectrum_group) ||
-  anyNA(data$fuel_group)
-) {
-  
+unmapped_technology <- (
+  is.na(data$cooling_group) |
+    is.na(data$spectrum_group) |
+    is.na(data$fuel_group)
+)
+
+if (any(unmapped_technology)) {
+
+  cat("\nUNMAPPED TECHNOLOGICAL CATEGORIES:\n")
+
   print(
     coding_audit[
-      is.na(data$cooling_group) |
-        is.na(data$spectrum_group) |
-        is.na(data$fuel_group),
+      unmapped_technology,
       ,
       drop = FALSE
-    ]
+    ],
+    row.names = FALSE
   )
-  
+
   stop(
     "Unmapped cooling, spectrum or fuel categories. ",
     "Inspect the printed coding audit."
@@ -660,29 +724,53 @@ if (
 }
 
 unexpected_enrichment <- is.na(
-  data$enrichment_group
-) & !(
-  enrichment_raw %in% c(
-    "not_required",
-    "not required",
-    "not-required"
-  )
+  data$enrichment_status
 )
 
 if (any(unexpected_enrichment)) {
-  
+
+  cat("\nUNEXPECTED ENRICHMENT VALUES:\n")
+
   print(
     coding_audit[
       unexpected_enrichment,
       ,
       drop = FALSE
-    ]
+    ],
+    row.names = FALSE
   )
-  
+
   stop(
-    "Unexpected enrichment values detected."
+    "Unexpected enrichment values detected. ",
+    "Only LEU, HALEU, not_required and unresolved ",
+    "are expected."
   )
 }
+
+cat("\n====================================\n")
+cat("TECHNOLOGICAL CODING VALIDATED\n")
+cat("====================================\n")
+
+cat("\nCooling:\n")
+print(table(data$cooling_group, useNA = "ifany"))
+
+cat("\nSpectrum:\n")
+print(table(data$spectrum_group, useNA = "ifany"))
+
+cat("\nFuel type (three categories):\n")
+print(table(data$fuel_type_3, useNA = "ifany"))
+
+cat("\nFuel type (Figure 8 comparison):\n")
+print(table(data$fuel_group, useNA = "ifany"))
+
+cat("\nFuel enrichment:\n")
+print(table(data$enrichment_status, useNA = "ifany"))
+
+cat(
+  "\nDesigns available for enrichment analysis:",
+  sum(!is.na(data$enrichment_group)),
+  "\n"
+)
 
 
 # ---------------------------------------------------------------
@@ -698,23 +786,23 @@ outcome_order <- c(
 )
 
 for (outcome in outcome_order) {
-  
+
   column <- outcome_columns[[outcome]]
-  
+
   data[[column]] <- suppressWarnings(
     as.numeric(
       as.character(data[[column]])
     )
   )
-  
+
   invalid <- !is.na(data[[column]]) &
     !(data[[column]] %in% 1:6)
-  
+
   if (any(invalid)) {
     stop(
       "Invalid readiness scores for ",
       outcome,
-      ". Expected values from 1 to 6."
+      ". Expected integer values from 1 to 6."
     )
   }
 }
@@ -725,28 +813,28 @@ for (outcome in outcome_order) {
 # ---------------------------------------------------------------
 
 predictor_info <- list(
-  
+
   cooling = list(
     column = "cooling_group",
     title = "Reactor cooling type",
     comparison = "Water-cooled vs non-water-cooled",
     reference = "Non-water-cooled"
   ),
-  
+
   spectrum = list(
     column = "spectrum_group",
     title = "Neutron spectrum",
     comparison = "Thermal vs fast",
     reference = "Fast"
   ),
-  
+
   fuel = list(
     column = "fuel_group",
     title = "Fuel type",
     comparison = "Uranium vs TRISO/Other",
     reference = "TRISO/Other"
   ),
-  
+
   enrichment = list(
     column = "enrichment_group",
     title = "Fuel enrichment",
@@ -765,32 +853,32 @@ fit_model <- function(
     predictor_name,
     outcome_name
 ) {
-  
+
   info <- predictor_info[[predictor_name]]
-  
+
   model_data <- data.frame(
-    
+
     response = make_outcome(
       dataset[[
         outcome_columns[[outcome_name]]
       ]]
     ),
-    
+
     predictor = dataset[[info$column]]
   )
-  
+
   model_data <- model_data[
     stats::complete.cases(model_data),
     ,
     drop = FALSE
   ]
-  
+
   n_used <- nrow(model_data)
-  
+
   model_data$predictor <- droplevels(
     model_data$predictor
   )
-  
+
   if (
     n_used < 10 ||
     nlevels(model_data$predictor) != 2 ||
@@ -803,43 +891,43 @@ fit_model <- function(
       outcome_name
     )
   }
-  
+
   model <- MASS::polr(
     response ~ predictor,
     data = model_data,
     method = "logistic",
     Hess = TRUE
   )
-  
+
   coefficients <- coef(
     summary(model)
   )
-  
+
   predictor_row <- grep(
     "^predictor",
     rownames(coefficients)
   )
-  
+
   if (length(predictor_row) != 1) {
     stop(
       "Unexpected model coefficient structure."
     )
   }
-  
+
   beta <- unname(
     coefficients[
       predictor_row,
       "Value"
     ]
   )
-  
+
   se <- unname(
     coefficients[
       predictor_row,
       "Std. Error"
     ]
   )
-  
+
   if (
     !is.finite(beta) ||
     !is.finite(se) ||
@@ -850,42 +938,42 @@ fit_model <- function(
       "or standard error."
     )
   }
-  
+
   p_value <- 2 * stats::pnorm(
     abs(beta / se),
     lower.tail = FALSE
   )
-  
+
   data.frame(
-    
+
     predictor = predictor_name,
-    
+
     predictor_label = info$title,
-    
+
     comparison = info$comparison,
-    
+
     reference = info$reference,
-    
+
     outcome = outcome_name,
-    
+
     n = n_used,
-    
+
     beta = beta,
-    
+
     standard_error = se,
-    
+
     odds_ratio = exp(beta),
-    
+
     ci_low = exp(
       beta - 1.96 * se
     ),
-    
+
     ci_high = exp(
       beta + 1.96 * se
     ),
-    
+
     p_value = p_value,
-    
+
     stringsAsFactors = FALSE
   )
 }
@@ -900,15 +988,15 @@ results_list <- list()
 counter <- 1
 
 for (predictor in names(predictor_info)) {
-  
+
   for (outcome in outcome_order) {
-    
+
     results_list[[counter]] <- fit_model(
       dataset = data,
       predictor_name = predictor,
       outcome_name = outcome
     )
-    
+
     counter <- counter + 1
   }
 }
@@ -923,8 +1011,7 @@ if (nrow(results) != 20) {
   )
 }
 
-# Holm adjustment across the 20 tests
-# in the main Figure 8 analysis.
+# Holm adjustment across all 20 tests.
 
 results$p_holm <- stats::p.adjust(
   results$p_value,
@@ -959,41 +1046,63 @@ print(
 # 16. CATEGORY COUNTS
 # ---------------------------------------------------------------
 
+make_counts <- function(values, predictor_label) {
+
+  counts <- as.data.frame(
+    table(
+      values,
+      useNA = "ifany"
+    ),
+    stringsAsFactors = FALSE
+  )
+
+  names(counts) <- c(
+    "category",
+    "n"
+  )
+
+  counts$predictor <- predictor_label
+
+  counts[
+    ,
+    c(
+      "predictor",
+      "category",
+      "n"
+    )
+  ]
+}
+
 category_counts <- dplyr::bind_rows(
-  lapply(
-    names(predictor_info),
-    function(predictor) {
-      
-      info <- predictor_info[[predictor]]
-      
-      values <- as.character(
-        data[[info$column]]
-      )
-      
-      counts <- as.data.frame(
-        table(
-          values,
-          useNA = "ifany"
-        ),
-        stringsAsFactors = FALSE
-      )
-      
-      names(counts) <- c(
-        "category",
-        "n"
-      )
-      
-      counts$predictor <- info$title
-      
-      counts[
-        ,
-        c(
-          "predictor",
-          "category",
-          "n"
-        )
-      ]
-    }
+
+  make_counts(
+    data$cooling_group,
+    "Reactor cooling type"
+  ),
+
+  make_counts(
+    data$spectrum_group,
+    "Neutron spectrum"
+  ),
+
+  make_counts(
+    data$fuel_type_3,
+    "Fuel type (three categories)"
+  ),
+
+  make_counts(
+    data$fuel_group,
+    "Fuel type (Figure 8 comparison)"
+  ),
+
+  make_counts(
+    data$enrichment_status,
+    "Fuel enrichment (original categories)"
+  ),
+
+  make_counts(
+    data$enrichment_group,
+    "Fuel enrichment (regression sample)"
   )
 )
 
@@ -1003,7 +1112,7 @@ category_counts <- dplyr::bind_rows(
 # ---------------------------------------------------------------
 
 sample_summary <- data.frame(
-  
+
   metric = c(
     "Source workbook",
     "Source worksheet",
@@ -1013,9 +1122,11 @@ sample_summary <- data.frame(
     "Technological predictors",
     "Readiness indicators",
     "Ordinal regression models",
-    "Multiple-testing adjustment"
+    "Multiple-testing adjustment",
+    "Enrichment-eligible designs",
+    "Excluded from enrichment regressions"
   ),
-  
+
   value = c(
     basename(input_file),
     sheet_name,
@@ -1025,7 +1136,13 @@ sample_summary <- data.frame(
     "4",
     "5",
     as.character(nrow(results)),
-    "Holm across 20 tests"
+    "Holm across 20 tests",
+    as.character(
+      sum(!is.na(data$enrichment_group))
+    ),
+    as.character(
+      sum(is.na(data$enrichment_group))
+    )
   )
 )
 
@@ -1037,15 +1154,15 @@ sample_summary <- data.frame(
 # Original colours retained.
 
 indicator_colours <- c(
-  
+
   "Financing" = "#2A9D8F",
-  
+
   "Supply chain" = "#4C78A8",
-  
+
   "Fuel supply" = "#8E63CE",
-  
+
   "Licensing" = "#8C2D3E",
-  
+
   "Siting" = "#C7922F"
 )
 
@@ -1059,33 +1176,33 @@ make_panel <- function(
     predictor_name,
     panel_letter
 ) {
-  
+
   info <- predictor_info[[predictor_name]]
-  
+
   panel_data <- results[
     results$predictor == predictor_name,
     ,
     drop = FALSE
   ]
-  
+
   panel_data$outcome <- factor(
     panel_data$outcome,
     levels = rev(outcome_order)
   )
-  
+
   # Panel-specific logarithmic axis ranges.
-  
+
   x_values <- c(
     panel_data$ci_low,
     panel_data$ci_high,
     1
   )
-  
+
   x_limits <- exp(
     range(log(x_values)) +
       c(-0.15, 0.15)
   )
-  
+
   candidate_breaks <- c(
     0.001,
     0.002,
@@ -1105,19 +1222,19 @@ make_panel <- function(
     100,
     200
   )
-  
+
   breaks <- candidate_breaks[
     candidate_breaks >= x_limits[1] &
       candidate_breaks <= x_limits[2]
   ]
-  
+
   comparison_label <- paste0(
     info$comparison,
     " (ref: ",
     info$reference,
     ")"
   )
-  
+
   panel <- ggplot2::ggplot(
     panel_data,
     ggplot2::aes(
@@ -1126,14 +1243,14 @@ make_panel <- function(
       colour = outcome
     )
   ) +
-    
+
     ggplot2::geom_vline(
       xintercept = 1,
       linetype = "dashed",
       colour = "grey45",
       linewidth = 0.5
     ) +
-    
+
     ggplot2::geom_segment(
       ggplot2::aes(
         x = ci_low,
@@ -1143,16 +1260,16 @@ make_panel <- function(
       ),
       linewidth = 0.8
     ) +
-    
+
     ggplot2::geom_point(
       size = 2.9
     ) +
-    
+
     ggplot2::scale_colour_manual(
       values = indicator_colours,
       guide = "none"
     ) +
-    
+
     ggplot2::scale_x_log10(
       limits = x_limits,
       breaks = breaks,
@@ -1165,51 +1282,51 @@ make_panel <- function(
       },
       minor_breaks = NULL
     ) +
-    
+
     ggplot2::scale_y_discrete(
       drop = FALSE
     ) +
-    
+
     ggplot2::labs(
       title = info$title,
       subtitle = comparison_label,
       x = "Odds ratio (log scale)",
       y = NULL
     ) +
-    
+
     ggplot2::theme_classic(
       base_size = 10
     ) +
-    
+
     ggplot2::theme(
-      
+
       panel.grid = ggplot2::element_blank(),
-      
+
       axis.line = ggplot2::element_line(
         colour = "black",
         linewidth = 0.45
       ),
-      
+
       axis.ticks = ggplot2::element_blank(),
-      
+
       axis.text.x = ggplot2::element_text(
         colour = "black",
         size = 9,
         margin = ggplot2::margin(t = 7)
       ),
-      
+
       axis.text.y = ggplot2::element_text(
         colour = "black",
         size = 9,
         margin = ggplot2::margin(r = 7)
       ),
-      
+
       axis.title.x = ggplot2::element_text(
         colour = "black",
         size = 9.5,
         margin = ggplot2::margin(t = 8)
       ),
-      
+
       plot.title = ggplot2::element_text(
         face = "bold",
         size = 11.5,
@@ -1217,14 +1334,14 @@ make_panel <- function(
         colour = "black",
         margin = ggplot2::margin(b = 4)
       ),
-      
+
       plot.subtitle = ggplot2::element_text(
         size = 8.5,
         hjust = 0.5,
         colour = "black",
         margin = ggplot2::margin(b = 10)
       ),
-      
+
       plot.margin = ggplot2::margin(
         t = 8,
         r = 14,
@@ -1232,7 +1349,7 @@ make_panel <- function(
         l = 12
       )
     )
-  
+
   cowplot::ggdraw(panel) +
     cowplot::draw_plot_label(
       panel_letter,
@@ -1378,40 +1495,54 @@ ggplot2::ggsave(
 
 
 # ---------------------------------------------------------------
-# 24. DESIGN AUDIT
+# 24. DESIGN-LEVEL AUDIT
 # ---------------------------------------------------------------
 
 design_audit <- data.frame(
-  
+
   design = data$design_id,
-  
-  cooling_group = data$cooling_group,
-  
-  spectrum_group = data$spectrum_group,
-  
-  fuel_group = data$fuel_group,
-  
-  enrichment_group = data$enrichment_group,
-  
+
+  cooling_group = as.character(
+    data$cooling_group
+  ),
+
+  spectrum_group = as.character(
+    data$spectrum_group
+  ),
+
+  fuel_type_3 = data$fuel_type_3,
+
+  fuel_group = as.character(
+    data$fuel_group
+  ),
+
+  enrichment_status = data$enrichment_status,
+
+  enrichment_group = as.character(
+    data$enrichment_group
+  ),
+
   financing = data[[
     outcome_columns[["Financing"]]
   ]],
-  
+
   supply_chain = data[[
     outcome_columns[["Supply chain"]]
   ]],
-  
+
   fuel_supply = data[[
     outcome_columns[["Fuel supply"]]
   ]],
-  
+
   licensing = data[[
     outcome_columns[["Licensing"]]
   ]],
-  
+
   siting = data[[
     outcome_columns[["Siting"]]
-  ]]
+  ]],
+
+  stringsAsFactors = FALSE
 )
 
 design_audit <- design_audit[
@@ -1428,16 +1559,16 @@ design_audit <- design_audit[
 wb <- openxlsx::createWorkbook()
 
 tables <- list(
-  
+
   "Ordinal regression results" = results,
-  
+
   "Sample summary" = sample_summary,
-  
+
   "Category counts" = category_counts,
-  
+
   "Coding audit" = coding_audit,
-  
-  "Original coding" = coding_audit
+
+  "Design audit" = design_audit
 )
 
 header_style <- openxlsx::createStyle(
@@ -1448,12 +1579,12 @@ header_style <- openxlsx::createStyle(
 )
 
 for (sheet in names(tables)) {
-  
+
   openxlsx::addWorksheet(
     wb,
     sheet
   )
-  
+
   openxlsx::writeData(
     wb,
     sheet,
@@ -1461,13 +1592,13 @@ for (sheet in names(tables)) {
     headerStyle = header_style,
     withFilter = TRUE
   )
-  
+
   openxlsx::freezePane(
     wb,
     sheet,
     firstRow = TRUE
   )
-  
+
   openxlsx::setColWidths(
     wb,
     sheet,
@@ -1536,9 +1667,9 @@ cat(
 cat("\nPanel comparisons:\n")
 
 for (predictor in names(predictor_info)) {
-  
+
   info <- predictor_info[[predictor]]
-  
+
   cat(
     "\n",
     info$title,
@@ -1561,3 +1692,13 @@ for (file in output_files) {
 }
 
 cat("\nMain Figure 8 exported successfully.\n")
+
+# ================================================================
+# END OF SCRIPT
+#
+# Conversion note:
+# Updated JAG analytical logic, classification rules, validation
+# procedures, figure specifications and Excel audit outputs retained.
+# Repository-relative input and output paths restored.
+# Execution against the updated source workbook remains to be verified.
+# ================================================================
