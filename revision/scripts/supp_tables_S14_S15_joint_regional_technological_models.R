@@ -1,84 +1,173 @@
-
-# =============================================================================
+# ================================================================
 # SUPPLEMENTARY TABLES S14 AND S15
-# JOINT REGIONAL AND TECHNOLOGICAL ASSOCIATIONS
-# NEA SMR Dashboard, Edition 4
+# NEA SMR DASHBOARD, EDITION 4
+# JOINT REGIONAL AND TECHNOLOGICAL ORDINAL REGRESSION
+# GITHUB REPRODUCIBLE VERSION
 #
 # Input:
 # revision/data/edition_4_regional_technology_source_data.xlsx
 #
-# Outputs:
+# Output:
 # revision/figures/supp_tables_S14_S15_joint_models_results.xlsx
-# revision/figures/supp_tables_S14_S15_joint_models_forest.png
-# revision/figures/supp_tables_S14_S15_joint_models_forest.pdf
-# =============================================================================
+#
+# S14: Fully adjusted ordinal logistic regression coefficients
+#      All designs (n = 85)
+#      Conventional SMRs (n = 51)
+#
+# S15: Nested-model likelihood-ratio comparisons
+#
+# 91 source designs
+# 89 designs following regional exclusions
+# 4 designs excluded owing to unresolved enrichment
+# 85 complete-case designs
+# 51 conventional SMRs
+#
+# 40 ordinal regression models
+# 90 fully adjusted regression coefficients
+# 20 nested-model comparisons
+#
+# Reference categories:
+# North America, water-cooled, thermal spectrum,
+# uranium fuel and LEU
+# ================================================================
 
-# 1. PACKAGES -----------------------------------------------------------------
+# ================================================================
+# 1. PACKAGES
+# ================================================================
 
 packages <- c(
-  "readxl", "dplyr", "ggplot2", "ordinal",
-  "openxlsx", "stringr", "tibble", "cowplot"
+  "readxl",
+  "dplyr",
+  "tidyr",
+  "tibble",
+  "stringr",
+  "ordinal",
+  "openxlsx"
 )
 
 missing_packages <- packages[
-  !vapply(packages, requireNamespace, logical(1), quietly = TRUE)
+  !vapply(
+    packages,
+    requireNamespace,
+    logical(1),
+    quietly = TRUE
+  )
 ]
 
-if (length(missing_packages)) {
+if (length(missing_packages) > 0) {
   install.packages(missing_packages)
 }
 
-suppressPackageStartupMessages({
-  library(dplyr)
-  library(ggplot2)
-})
-
-
-# 2. REPOSITORY PATHS ---------------------------------------------------------
-
-input_relative <- file.path(
-  "revision", "data",
-  "edition_4_regional_technology_source_data.xlsx"
+invisible(
+  lapply(
+    packages,
+    library,
+    character.only = TRUE
+  )
 )
 
-find_repo_root <- function(start = getwd()) {
-  
-  override <- Sys.getenv("SMR_REPO_ROOT", unset = "")
-  
+# ================================================================
+# 2. REPOSITORY PATHS
+# ================================================================
+
+source_filename <-
+  "edition_4_regional_technology_source_data.xlsx"
+
+find_repo_root <- function() {
+
+  override <- Sys.getenv(
+    "SMR_REPO_ROOT",
+    unset = ""
+  )
+
+  candidates <- getwd()
+
   if (nzchar(override)) {
-    root <- normalizePath(override, winslash = "/", mustWork = TRUE)
-    
-    if (!file.exists(file.path(root, input_relative))) {
-      stop("Input workbook not found under SMR_REPO_ROOT.")
-    }
-    
-    return(root)
+    candidates <- c(override, candidates)
   }
-  
-  current <- normalizePath(start, winslash = "/", mustWork = TRUE)
-  
-  repeat {
-    
-    if (file.exists(file.path(current, input_relative))) {
-      return(current)
-    }
-    
-    parent <- dirname(current)
-    
-    if (identical(parent, current)) {
-      stop("Cannot locate input workbook: ", input_relative)
-    }
-    
-    current <- parent
+
+  args <- commandArgs(
+    trailingOnly = FALSE
+  )
+
+  file_arg <- grep(
+    "^--file=",
+    args,
+    value = TRUE
+  )
+
+  if (length(file_arg) > 0) {
+    candidates <- c(
+      candidates,
+      dirname(sub("^--file=", "", file_arg[1]))
+    )
   }
+
+  for (frame in sys.frames()) {
+
+    if (!is.null(frame$ofile)) {
+      candidates <- c(
+        candidates,
+        dirname(frame$ofile)
+      )
+    }
+  }
+
+  candidates <- unique(
+    normalizePath(
+      candidates,
+      winslash = "/",
+      mustWork = FALSE
+    )
+  )
+
+  for (candidate in candidates) {
+
+    current <- candidate
+
+    repeat {
+
+      target <- file.path(
+        current,
+        "revision",
+        "data",
+        source_filename
+      )
+
+      if (file.exists(target)) {
+        return(current)
+      }
+
+      parent <- dirname(current)
+
+      if (identical(parent, current)) {
+        break
+      }
+
+      current <- parent
+    }
+  }
+
+  stop(
+    "Repository root not found. Expected revision/data/",
+    source_filename,
+    ". Run from the repository or set SMR_REPO_ROOT."
+  )
 }
 
 repo_root <- find_repo_root()
 
-input_file <- file.path(repo_root, input_relative)
+input_file <- file.path(
+  repo_root,
+  "revision",
+  "data",
+  source_filename
+)
 
 output_dir <- file.path(
-  repo_root, "revision", "figures"
+  repo_root,
+  "revision",
+  "figures"
 )
 
 dir.create(
@@ -87,13 +176,23 @@ dir.create(
   showWarnings = FALSE
 )
 
-output_prefix <- file.path(
+excel_file <- file.path(
   output_dir,
-  "supp_tables_S14_S15_joint_models"
+  "supp_tables_S14_S15_joint_models_results.xlsx"
 )
 
+diagnostic_file <- file.path(
+  output_dir,
+  "supp_S03_model_failure_diagnostics.xlsx"
+)
 
-# 3. IMPORT -------------------------------------------------------------------
+cat("\nRepository root:\n", repo_root, "\n")
+cat("\nInput workbook:\n", input_file, "\n")
+cat("\nOutput directory:\n", output_dir, "\n")
+
+# ================================================================
+# 3. READ SOURCE DATA
+# ================================================================
 
 sheets <- readxl::excel_sheets(input_file)
 
@@ -103,12 +202,16 @@ sheet_name <- if ("Source data" %in% sheets) {
   sheets[1]
 }
 
-raw <- readxl::read_excel(input_file, sheet = sheet_name)
-
-names(raw) <- gsub(
-  "_$", "",
-  gsub("[^a-z0-9]+", "_", tolower(names(raw)))
+raw <- readxl::read_excel(
+  input_file,
+  sheet = sheet_name
 )
+
+names(raw) <- names(raw) |>
+  stringr::str_trim() |>
+  stringr::str_to_lower() |>
+  stringr::str_replace_all("[^a-z0-9]+", "_") |>
+  stringr::str_replace_all("^_|_$", "")
 
 if (
   !"neutron_spectrum" %in% names(raw) &&
@@ -117,30 +220,35 @@ if (
   raw$neutron_spectrum <- raw$neturon_spectrum
 }
 
-required <- c(
-  "design", "region_cn_ru", "microreactor",
-  "neutron_spectrum", "fuel_type", "fuel_enrichment",
-  "financing", "supply_chain", "fuel_supply",
-  "licensing", "siting"
+required_columns <- c(
+  "design",
+  "region_cn_ru",
+  "microreactor",
+  "cooling_type",
+  "neutron_spectrum",
+  "fuel_type",
+  "fuel_enrichment",
+  "financing",
+  "supply_chain",
+  "fuel_supply",
+  "licensing",
+  "siting"
 )
 
-missing_columns <- setdiff(required, names(raw))
+missing_columns <- setdiff(
+  required_columns,
+  names(raw)
+)
 
-if (length(missing_columns)) {
+if (length(missing_columns) > 0) {
   stop(
     "Missing required columns: ",
     paste(missing_columns, collapse = ", ")
   )
 }
 
-if (
-  !"water_cooled" %in% names(raw) &&
-  !"cooling_type" %in% names(raw)
-) {
-  stop("Missing water-cooled or cooling-type variable.")
-}
-
 if ("edition" %in% names(raw)) {
+
   raw <- raw[
     as.character(raw$edition) == "4",
     ,
@@ -156,185 +264,1432 @@ raw <- raw[
   drop = FALSE
 ]
 
-if (anyDuplicated(toupper(trimws(as.character(raw$design))))) {
-  stop("Duplicate reactor design identifiers detected.")
+if (anyDuplicated(
+  toupper(trimws(as.character(raw$design)))
+)) {
+  stop("Duplicate design identifiers detected.")
 }
 
 if (nrow(raw) != 91) {
-  stop("Expected 91 Edition 4 designs; found ", nrow(raw))
+  stop(
+    "Expected 91 source designs; found ",
+    nrow(raw)
+  )
 }
 
-
-# 4. CLEANING FUNCTIONS -------------------------------------------------------
+# ================================================================
+# 4. STANDARDISATION FUNCTIONS
+# ================================================================
 
 clean_text <- function(x) {
-  
-  z <- stringr::str_squish(
-    gsub("\u00a0", " ", as.character(x), fixed = TRUE)
-  )
-  
-  z[z %in% c("", "NA", "N/A")] <- NA_character_
-  
-  z
+
+  x |>
+    as.character() |>
+    stringr::str_trim() |>
+    stringr::str_to_lower() |>
+    stringr::str_replace_all("[_-]+", " ") |>
+    stringr::str_squish()
 }
 
-clean_binary <- function(x) {
-  
-  z <- toupper(clean_text(x))
-  
+standardise_region <- function(x) {
+
+  z <- clean_text(x)
+
   dplyr::case_when(
-    z %in% c("TRUE", "T", "1", "YES") ~ TRUE,
-    z %in% c("FALSE", "F", "0", "NO") ~ FALSE,
+
+    z %in% c(
+      "north america",
+      "na"
+    ) ~ "North America",
+
+    z %in% c(
+      "europe",
+      "eu"
+    ) ~ "Europe",
+
+    z %in% c(
+      "oecd asia",
+      "oecd asian"
+    ) ~ "OECD Asia",
+
+    z %in% c(
+      "china/russia",
+      "china russia",
+      "china and russia",
+      "cn ru"
+    ) ~ "China/Russia",
+
+    z %in% c(
+      "rest of world",
+      "rest of the world",
+      "row"
+    ) ~ "Rest of world",
+
+    TRUE ~ NA_character_
+  )
+}
+
+standardise_micro <- function(x) {
+
+  z <- clean_text(x)
+
+  dplyr::case_when(
+
+    z %in% c(
+      "true",
+      "t",
+      "1",
+      "yes"
+    ) ~ TRUE,
+
+    z %in% c(
+      "false",
+      "f",
+      "0",
+      "no"
+    ) ~ FALSE,
+
     TRUE ~ NA
   )
 }
 
+standardise_cooling <- function(x) {
 
-# 5. REGIONAL HARMONISATION ---------------------------------------------------
+  z <- clean_text(x)
 
-region_raw <- tolower(clean_text(raw$region_cn_ru))
+  dplyr::case_when(
 
-region <- dplyr::case_when(
-  region_raw %in% c("north_america", "north america") ~
-    "North America",
-  region_raw == "europe" ~ "Europe",
-  region_raw %in% c("oecd_asia", "oecd asia") ~
-    "OECD Asia",
-  region_raw %in% c("china/russia", "china_russia") ~
-    "China/Russia",
-  region_raw %in% c("row", "rest of world", "rest_of_world") ~
-    "Rest of world",
-  TRUE ~ NA_character_
-)
+    z %in% c(
+      "water",
+      "water cooled",
+      "watercooled"
+    ) ~ "Water-cooled",
 
-if (anyNA(region)) {
-  stop(
-    "Unrecognised region values: ",
-    paste(unique(raw$region_cn_ru[is.na(region)]), collapse = "; ")
+    z %in% c(
+      "gas",
+      "metal",
+      "salt",
+      "heat pipe",
+      "heat pipes",
+      "heatpipe",
+      "heatpipe cooled",
+      "heat pipe cooled",
+      "non water",
+      "non water cooled",
+      "nonwater",
+      "gas cooled",
+      "metal cooled",
+      "salt cooled",
+      "molten salt",
+      "liquid metal",
+      "sodium",
+      "lead",
+      "helium"
+    ) ~ "Non-water-cooled",
+
+    TRUE ~ NA_character_
   )
 }
 
+standardise_spectrum <- function(x) {
 
-# 6. TECHNOLOGICAL HARMONISATION ----------------------------------------------
+  z <- clean_text(x)
 
-if ("water_cooled" %in% names(raw)) {
-  
-  water <- clean_binary(raw$water_cooled)
-  
-} else {
-  
-  cooling_raw <- tolower(clean_text(raw$cooling_type))
-  
-  water <- dplyr::case_when(
-    cooling_raw == "water" ~ TRUE,
-    !is.na(cooling_raw) ~ FALSE,
-    TRUE ~ NA
+  dplyr::case_when(
+
+    z %in% c(
+      "thermal",
+      "thermal spectrum"
+    ) ~ "Thermal",
+
+    z %in% c(
+      "fast",
+      "fast spectrum"
+    ) ~ "Fast",
+
+    TRUE ~ NA_character_
   )
 }
 
-df <- raw %>%
-  mutate(
-    design = clean_text(design),
-    region = region,
-    microreactor = clean_binary(microreactor),
-    
-    spectrum = case_when(
-      tolower(clean_text(neutron_spectrum)) == "thermal" ~ "Thermal",
-      tolower(clean_text(neutron_spectrum)) == "fast" ~ "Fast",
-      TRUE ~ NA_character_
-    ),
-    
-    fuel_type = case_when(
-      tolower(clean_text(fuel_type)) == "uranium" ~ "Uranium",
-      tolower(clean_text(fuel_type)) == "triso" ~ "TRISO",
-      tolower(clean_text(fuel_type)) == "other" ~ "Other",
-      TRUE ~ NA_character_
-    ),
-    
-    enrichment = case_when(
-      toupper(clean_text(fuel_enrichment)) == "LEU" ~ "LEU",
-      toupper(clean_text(fuel_enrichment)) == "HALEU" ~ "HALEU",
-      tolower(clean_text(fuel_enrichment)) %in%
-        c("not_required", "not required") ~ "Not required",
-      TRUE ~ NA_character_
-    ),
-    
-    water_cooled = water,
-    
-    cooling = case_when(
-      water_cooled == TRUE ~ "Water",
-      water_cooled == FALSE ~ "Non-water",
-      TRUE ~ NA_character_
-    ),
-    
-    across(
-      all_of(c(
-        "financing", "supply_chain", "fuel_supply",
-        "licensing", "siting"
-      )),
-      ~ suppressWarnings(as.numeric(as.character(.x)))
-    )
-  )
+standardise_fuel <- function(x) {
 
-if (anyNA(df$microreactor)) {
-  stop("Unrecognised microreactor classifications.")
+  z <- clean_text(x)
+
+  dplyr::case_when(
+
+    z %in% c(
+      "uranium",
+      "uranium fuel"
+    ) ~ "Uranium",
+
+    z %in% c(
+      "triso",
+      "triso fuel"
+    ) ~ "TRISO",
+
+    z %in% c(
+      "other",
+      "other fuel"
+    ) ~ "Other",
+
+    TRUE ~ NA_character_
+  )
 }
 
-if (sum(!df$microreactor) != 53) {
-  stop("Expected 53 conventional SMRs.")
+standardise_enrichment <- function(x) {
+
+  z <- clean_text(x)
+
+  dplyr::case_when(
+
+    z == "leu" ~ "LEU",
+
+    z == "haleu" ~ "HALEU",
+
+    z %in% c(
+      "not required",
+      "notrequired",
+      "no enrichment",
+      "no enrichment required"
+    ) ~ "Not required",
+
+    TRUE ~ NA_character_
+  )
 }
 
-
-# 7. REGRESSION SAMPLES -------------------------------------------------------
-
-region_audit <- df %>%
-  count(region, microreactor, name = "n")
-
-df <- df %>%
-  filter(
-    region %in% c(
-      "North America", "Europe",
-      "OECD Asia", "China/Russia"
-    )
-  ) %>%
-  mutate(
-    region = factor(
-      region,
-      levels = c(
-        "North America", "Europe",
-        "OECD Asia", "China/Russia"
-      )
-    ),
-    cooling = factor(
-      cooling,
-      levels = c("Water", "Non-water")
-    ),
-    spectrum = factor(
-      spectrum,
-      levels = c("Thermal", "Fast")
-    ),
-    fuel_type = factor(
-      fuel_type,
-      levels = c("Uranium", "TRISO", "Other")
-    ),
-    enrichment = factor(
-      enrichment,
-      levels = c("LEU", "HALEU", "Not required")
-    )
-  )
-
-samples <- list(
-  "All designs" = df,
-  "Conventional SMRs" = df %>%
-    filter(microreactor == FALSE)
-)
+# ================================================================
+# 5. BUILD ANALYSIS DATASET
+# ================================================================
 
 outcomes <- c(
-  "financing", "supply_chain", "fuel_supply",
-  "licensing", "siting"
+  "financing",
+  "supply_chain",
+  "fuel_supply",
+  "licensing",
+  "siting"
 )
 
+data <- tibble::tibble(
+
+  design = as.character(raw$design),
+
+  region_raw = as.character(raw$region_cn_ru),
+  microreactor_raw = as.character(raw$microreactor),
+  cooling_raw = as.character(raw$cooling_type),
+  spectrum_raw = as.character(raw$neutron_spectrum),
+  fuel_raw = as.character(raw$fuel_type),
+  enrichment_raw = as.character(raw$fuel_enrichment),
+
+  region = standardise_region(raw$region_cn_ru),
+  microreactor = standardise_micro(raw$microreactor),
+  cooling = standardise_cooling(raw$cooling_type),
+  spectrum = standardise_spectrum(raw$neutron_spectrum),
+  fuel = standardise_fuel(raw$fuel_type),
+  enrichment = standardise_enrichment(raw$fuel_enrichment),
+
+  financing = raw$financing,
+  supply_chain = raw$supply_chain,
+  fuel_supply = raw$fuel_supply,
+  licensing = raw$licensing,
+  siting = raw$siting
+)
+
+for (v in outcomes) {
+
+  data[[v]] <- suppressWarnings(
+    as.numeric(as.character(data[[v]]))
+  )
+
+  invalid <- !is.na(data[[v]]) &
+    (
+      data[[v]] < 1 |
+      data[[v]] > 6 |
+      data[[v]] != floor(data[[v]])
+    )
+
+  if (any(invalid)) {
+    stop("Invalid readiness scores in: ", v)
+  }
+}
+
+# ================================================================
+# 6. CLASSIFICATION AUDIT
+# ================================================================
+
+invalid_classifications <- data |>
+  dplyr::filter(
+    is.na(region) |
+      is.na(microreactor) |
+      is.na(cooling) |
+      is.na(spectrum) |
+      is.na(fuel)
+  )
+
+if (nrow(invalid_classifications) > 0) {
+
+  print(
+    invalid_classifications,
+    n = Inf,
+    width = Inf
+  )
+
+  stop("Unrecognised classifications detected.")
+}
+
+region_audit <- data |>
+  dplyr::count(
+    region,
+    name = "n"
+  )
+
+excluded_region <- data |>
+  dplyr::filter(
+    region == "Rest of world"
+  )
+
+regional_data <- data |>
+  dplyr::filter(
+    region %in% c(
+      "North America",
+      "Europe",
+      "OECD Asia",
+      "China/Russia"
+    )
+  )
+
+excluded_enrichment <- regional_data |>
+  dplyr::filter(is.na(enrichment)) |>
+  dplyr::select(
+    design,
+    region,
+    microreactor,
+    enrichment_raw,
+    dplyr::all_of(outcomes)
+  )
+
+# ================================================================
+# 7. COMPLETE-CASE SAMPLES
+# ================================================================
+
+predictors <- c(
+  "region",
+  "cooling",
+  "spectrum",
+  "fuel",
+  "enrichment"
+)
+
+analysis_variables <- c(
+  predictors,
+  outcomes
+)
+
+all_designs <- regional_data |>
+  dplyr::filter(
+    stats::complete.cases(
+      dplyr::pick(
+        dplyr::all_of(analysis_variables)
+      )
+    )
+  )
+
+conventional <- all_designs |>
+  dplyr::filter(
+    microreactor == FALSE
+  )
+
+prepare_factors <- function(df) {
+
+  df |>
+    dplyr::mutate(
+
+      region = factor(
+        region,
+        levels = c(
+          "North America",
+          "Europe",
+          "OECD Asia",
+          "China/Russia"
+        )
+      ),
+
+      cooling = factor(
+        cooling,
+        levels = c(
+          "Water-cooled",
+          "Non-water-cooled"
+        )
+      ),
+
+      spectrum = factor(
+        spectrum,
+        levels = c(
+          "Thermal",
+          "Fast"
+        )
+      ),
+
+      fuel = factor(
+        fuel,
+        levels = c(
+          "Uranium",
+          "TRISO",
+          "Other"
+        )
+      ),
+
+      enrichment = factor(
+        enrichment,
+        levels = c(
+          "LEU",
+          "HALEU",
+          "Not required"
+        )
+      )
+    )
+}
+
+all_designs <- prepare_factors(all_designs)
+conventional <- prepare_factors(conventional)
+
+sample_audit <- tibble::tibble(
+
+  sample = c(
+    "Source dataset",
+    "Four-region dataset",
+    "Unresolved enrichment",
+    "All-design complete cases",
+    "Conventional SMRs"
+  ),
+
+  n = c(
+    nrow(data),
+    nrow(regional_data),
+    nrow(excluded_enrichment),
+    nrow(all_designs),
+    nrow(conventional)
+  )
+)
+
+print(sample_audit)
+
+if (
+  nrow(data) != 91 ||
+  nrow(regional_data) != 89 ||
+  nrow(excluded_enrichment) != 4 ||
+  nrow(all_designs) != 85 ||
+  nrow(conventional) != 51
+) {
+  stop(
+    "Unexpected sample sizes. ",
+    "Inspect the source data."
+  )
+}
+
+# ================================================================
+# 8. DIAGNOSTIC DISTRIBUTIONS
+# ================================================================
+
+fuel_distribution <- dplyr::bind_rows(
+
+  lapply(
+
+    list(
+      all_designs = all_designs,
+      conventional = conventional
+    ),
+
+    function(df) {
+
+      df |>
+        dplyr::count(
+          fuel_supply,
+          name = "n"
+        )
+    }
+  ),
+
+  .id = "sample"
+)
+
+fuel_by_region <- all_designs |>
+  dplyr::count(
+    region,
+    fuel_supply,
+    name = "n"
+  )
+
+fuel_by_cooling <- all_designs |>
+  dplyr::count(
+    cooling,
+    fuel_supply,
+    name = "n"
+  )
+
+fuel_by_spectrum <- all_designs |>
+  dplyr::count(
+    spectrum,
+    fuel_supply,
+    name = "n"
+  )
+
+fuel_by_fuel <- all_designs |>
+  dplyr::count(
+    fuel,
+    fuel_supply,
+    name = "n"
+  )
+
+fuel_by_enrichment <- all_designs |>
+  dplyr::count(
+    enrichment,
+    fuel_supply,
+    name = "n"
+  )
+
+# ================================================================
+# 9. MODEL SPECIFICATIONS
+# ================================================================
+
+samples <- list(
+  all_designs = all_designs,
+  conventional = conventional
+)
+
+model_specs <- list(
+
+  M0 = character(0),
+
+  M1_region = "region",
+
+  M2_technology = c(
+    "cooling",
+    "spectrum",
+    "fuel",
+    "enrichment"
+  ),
+
+  M3_combined = c(
+    "region",
+    "cooling",
+    "spectrum",
+    "fuel",
+    "enrichment"
+  )
+)
+
+make_formula <- function(outcome, terms) {
+
+  rhs <- if (length(terms) == 0) {
+    "1"
+  } else {
+    paste(terms, collapse = " + ")
+  }
+
+  stats::as.formula(
+    paste(outcome, "~", rhs)
+  )
+}
+
+# ================================================================
+# 10. ROBUST ORDINAL MODEL FITTING
+# ================================================================
+
+fit_clm <- function(df, outcome, terms) {
+
+  model_df <- df |>
+    dplyr::select(
+      dplyr::all_of(
+        c(outcome, terms)
+      )
+    )
+
+  model_df[[outcome]] <- ordered(
+    model_df[[outcome]],
+    levels = 1:6
+  )
+
+  model_df[[outcome]] <- droplevels(
+    model_df[[outcome]]
+  )
+
+  if (nlevels(model_df[[outcome]]) < 2) {
+
+    return(
+      list(
+        model = NULL,
+        status = "FAILED",
+        attempt = NA_character_,
+        error = "Fewer than two observed outcome categories",
+        max_gradient = NA_real_,
+        condition_number = NA_real_
+      )
+    )
+  }
+
+  formula <- make_formula(
+    outcome,
+    terms
+  )
+
+  attempts <- list(
+
+    list(
+      name = "Newton_standard",
+      maxIter = 100,
+      gradTol = 1e-5
+    ),
+
+    list(
+      name = "Newton_extended",
+      maxIter = 500,
+      gradTol = 1e-6
+    )
+  )
+
+  errors <- character()
+
+  for (attempt in attempts) {
+
+    warning_messages <- character()
+
+    fitted <- tryCatch(
+
+      withCallingHandlers(
+
+        ordinal::clm(
+          formula = formula,
+          data = model_df,
+          link = "logit",
+          threshold = "flexible",
+          Hess = TRUE,
+          control = ordinal::clm.control(
+            method = "Newton",
+            maxIter = attempt$maxIter,
+            gradTol = attempt$gradTol
+          )
+        ),
+
+        warning = function(w) {
+
+          warning_messages <<- c(
+            warning_messages,
+            conditionMessage(w)
+          )
+
+          invokeRestart("muffleWarning")
+        }
+      ),
+
+      error = function(e) {
+
+        errors <<- c(
+          errors,
+          paste(
+            attempt$name,
+            conditionMessage(e),
+            sep = ": "
+          )
+        )
+
+        NULL
+      }
+    )
+
+    if (is.null(fitted)) {
+      next
+    }
+
+    convergence <- suppressWarnings(
+      as.integer(
+        as.character(fitted$convergence)[1]
+      )
+    )
+
+    if (
+      length(convergence) != 1L ||
+      is.na(convergence) ||
+      convergence != 0L
+    ) {
+
+      errors <- c(
+        errors,
+        paste(
+          attempt$name,
+          "convergence code:",
+          paste(
+            fitted$convergence,
+            collapse = ", "
+          )
+        )
+      )
+
+      next
+    }
+
+    ll <- tryCatch(
+      as.numeric(
+        stats::logLik(fitted)
+      ),
+      error = function(e) NA_real_
+    )
+
+    if (!is.finite(ll)) {
+
+      errors <- c(
+        errors,
+        paste(
+          attempt$name,
+          "non-finite log likelihood"
+        )
+      )
+
+      next
+    }
+
+    covariance <- tryCatch(
+      stats::vcov(fitted),
+      error = function(e) NULL
+    )
+
+    if (
+      is.null(covariance) ||
+      any(!is.finite(covariance)) ||
+      any(diag(covariance) <= 0)
+    ) {
+
+      errors <- c(
+        errors,
+        paste(
+          attempt$name,
+          "invalid covariance matrix"
+        )
+      )
+
+      next
+    }
+
+    beta <- fitted$beta
+
+    if (
+      length(terms) > 0 &&
+      (
+        length(beta) == 0 ||
+        any(!is.finite(beta))
+      )
+    ) {
+
+      errors <- c(
+        errors,
+        paste(
+          attempt$name,
+          "invalid regression coefficients"
+        )
+      )
+
+      next
+    }
+
+    if (
+      length(terms) > 0 &&
+      !all(
+        names(beta) %in% rownames(covariance)
+      )
+    ) {
+
+      errors <- c(
+        errors,
+        paste(
+          attempt$name,
+          "coefficient covariance mismatch"
+        )
+      )
+
+      next
+    }
+
+    max_gradient <- tryCatch(
+      max(
+        abs(fitted$gradient)
+      ),
+      error = function(e) NA_real_
+    )
+
+    condition_number <- tryCatch(
+      kappa(
+        fitted$Hessian
+      ),
+      error = function(e) NA_real_
+    )
+
+    if (
+      !is.finite(max_gradient) ||
+      max_gradient > attempt$gradTol
+    ) {
+
+      errors <- c(
+        errors,
+        paste(
+          attempt$name,
+          "gradient criterion not satisfied:",
+          signif(max_gradient, 5)
+        )
+      )
+
+      next
+    }
+
+    if (
+      !is.finite(condition_number) ||
+      condition_number > 1e10
+    ) {
+
+      errors <- c(
+        errors,
+        paste(
+          attempt$name,
+          "ill-conditioned Hessian:",
+          signif(condition_number, 5)
+        )
+      )
+
+      next
+    }
+
+    return(
+      list(
+        model = fitted,
+        status = "Converged",
+        attempt = attempt$name,
+        error = paste(
+          unique(
+            c(
+              errors,
+              warning_messages
+            )
+          ),
+          collapse = " | "
+        ),
+        max_gradient = max_gradient,
+        condition_number = condition_number
+      )
+    )
+  }
+
+  list(
+    model = NULL,
+    status = "FAILED",
+    attempt = NA_character_,
+    error = paste(
+      unique(errors),
+      collapse = " | "
+    ),
+    max_gradient = NA_real_,
+    condition_number = NA_real_
+  )
+}
+
+# ================================================================
+# 11. FIT ALL 40 MODELS
+# ================================================================
+
+models <- list()
+model_audit_list <- list()
+
+counter <- 1
+
+for (sample_name in names(samples)) {
+
+  models[[sample_name]] <- list()
+
+  for (outcome in outcomes) {
+
+    models[[sample_name]][[outcome]] <- list()
+
+    for (spec_name in names(model_specs)) {
+
+      cat(
+        "\nFITTING:",
+        sample_name,
+        "|",
+        outcome,
+        "|",
+        spec_name,
+        "\n"
+      )
+
+      result <- fit_clm(
+        df = samples[[sample_name]],
+        outcome = outcome,
+        terms = model_specs[[spec_name]]
+      )
+
+      models[[sample_name]][[outcome]][[spec_name]] <-
+        result$model
+
+      model_audit_list[[counter]] <- tibble::tibble(
+
+        sample = sample_name,
+        outcome = outcome,
+        specification = spec_name,
+        n = nrow(samples[[sample_name]]),
+        status = result$status,
+        optimizer = result$attempt,
+        max_gradient = result$max_gradient,
+        condition_number = result$condition_number,
+        error = result$error
+      )
+
+      cat(
+        "STATUS:",
+        result$status,
+        "\n"
+      )
+
+      counter <- counter + 1
+    }
+  }
+}
+
+model_audit <- dplyr::bind_rows(
+  model_audit_list
+)
+
+if (nrow(model_audit) != 40) {
+  stop("Expected 40 model audit records.")
+}
+
+failed_models <- model_audit |>
+  dplyr::filter(
+    status != "Converged"
+  )
+
+# ================================================================
+# 12. MODEL FAILURE DIAGNOSTICS
+# ================================================================
+
+if (nrow(failed_models) > 0) {
+
+  diagnostic_tabs <- list(
+
+    "Model audit" = model_audit,
+    "Failed models" = failed_models,
+    "Sample audit" = sample_audit,
+    "Fuel distribution" = fuel_distribution,
+    "Fuel by region" = fuel_by_region,
+    "Fuel by cooling" = fuel_by_cooling,
+    "Fuel by spectrum" = fuel_by_spectrum,
+    "Fuel by fuel" = fuel_by_fuel,
+    "Fuel by enrichment" = fuel_by_enrichment,
+    "Excluded enrichment" = excluded_enrichment,
+    "Complete case all" = all_designs,
+    "Complete case SMRs" = conventional
+  )
+
+  openxlsx::write.xlsx(
+    diagnostic_tabs,
+    file = diagnostic_file,
+    overwrite = TRUE
+  )
+
+  print(
+    failed_models,
+    n = Inf,
+    width = Inf
+  )
+
+  stop(
+    "\nOne or more models failed numerical validation.\n",
+    "No incomplete regression tables were exported.\n",
+    "Diagnostic workbook:\n",
+    diagnostic_file
+  )
+}
+
+cat(
+  "\nALL 40 MODELS PASSED VALIDATION.\n"
+)
+
+# ================================================================
+# 13. EXTRACT REGRESSION COEFFICIENTS
+# ================================================================
+
+extract_coefficients <- function(
+    model,
+    sample_name,
+    outcome,
+    n
+) {
+
+  beta <- model$beta
+
+  covariance <- stats::vcov(
+    model
+  )
+
+  se <- sqrt(
+    diag(covariance)[names(beta)]
+  )
+
+  z <- beta / se
+
+  p <- 2 * stats::pnorm(
+    abs(z),
+    lower.tail = FALSE
+  )
+
+  tibble::tibble(
+
+    sample = sample_name,
+    outcome = outcome,
+    n = n,
+    predictor = names(beta),
+    coefficient = as.numeric(beta),
+    standard_error = as.numeric(se),
+
+    odds_ratio = exp(
+      as.numeric(beta)
+    ),
+
+    ci_low = exp(
+      as.numeric(beta) -
+        1.96 * as.numeric(se)
+    ),
+
+    ci_high = exp(
+      as.numeric(beta) +
+        1.96 * as.numeric(se)
+    ),
+
+    p_wald = as.numeric(p)
+  )
+}
+
+coefficient_list <- list()
+
+counter <- 1
+
+for (sample_name in names(samples)) {
+
+  for (outcome in outcomes) {
+
+    model <- models[[sample_name]][[outcome]][["M3_combined"]]
+
+    coefficient_list[[counter]] <-
+      extract_coefficients(
+
+        model = model,
+        sample_name = sample_name,
+        outcome = outcome,
+        n = nrow(samples[[sample_name]])
+      )
+
+    counter <- counter + 1
+  }
+}
+
+coefficients <- dplyr::bind_rows(
+  coefficient_list
+) |>
+
+  dplyr::group_by(
+    sample,
+    outcome
+  ) |>
+
+  dplyr::mutate(
+
+    p_bh_within_outcome = stats::p.adjust(
+      p_wald,
+      method = "BH"
+    ),
+
+    p_holm_within_outcome = stats::p.adjust(
+      p_wald,
+      method = "holm"
+    )
+  ) |>
+
+  dplyr::ungroup()
+
+# ================================================================
+# 14. PREDICTOR LABELS
+# ================================================================
+
+term_labels <- c(
+
+  "regionEurope" = "Europe",
+  "regionOECD Asia" = "OECD Asia",
+  "regionChina/Russia" = "China/Russia",
+  "coolingNon-water-cooled" = "Non-water-cooled",
+  "spectrumFast" = "Fast-spectrum",
+  "fuelTRISO" = "TRISO fuel",
+  "fuelOther" = "Other fuel",
+  "enrichmentHALEU" = "HALEU",
+  "enrichmentNot required" = "Enrichment not required"
+)
+
+coefficients$term_label <- unname(
+  term_labels[coefficients$predictor]
+)
+
+if (anyNA(coefficients$term_label)) {
+
+  stop(
+    "Unrecognised coefficient names: ",
+    paste(
+      unique(
+        coefficients$predictor[
+          is.na(coefficients$term_label)
+        ]
+      ),
+      collapse = ", "
+    )
+  )
+}
+
+# ================================================================
+# 15. COEFFICIENT AUDIT
+# ================================================================
+
+coefficient_audit <- coefficients |>
+
+  dplyr::group_by(
+    sample,
+    outcome
+  ) |>
+
+  dplyr::summarise(
+    n_coefficients = dplyr::n(),
+    .groups = "drop"
+  )
+
+if (
+  nrow(coefficients) != 90 ||
+  nrow(coefficient_audit) != 10 ||
+  any(
+    coefficient_audit$n_coefficients != 9
+  )
+) {
+
+  stop(
+    "Incomplete coefficient output. ",
+    "Expected 90 coefficients across 10 models."
+  )
+}
+
+for (sample_name in names(samples)) {
+
+  for (outcome_name in outcomes) {
+
+    terms_found <- coefficients |>
+
+      dplyr::filter(
+        sample == sample_name,
+        outcome == outcome_name
+      ) |>
+
+      dplyr::pull(predictor)
+
+    if (
+      !setequal(
+        terms_found,
+        names(term_labels)
+      )
+    ) {
+
+      stop(
+        "Missing or unexpected predictors in ",
+        sample_name,
+        " | ",
+        outcome_name
+      )
+    }
+  }
+}
+
+if (
+  any(!is.finite(coefficients$odds_ratio)) ||
+  any(!is.finite(coefficients$ci_low)) ||
+  any(!is.finite(coefficients$ci_high)) ||
+  any(coefficients$ci_low <= 0)
+) {
+  stop("Invalid odds ratios or confidence intervals.")
+}
+
+# ================================================================
+# 16. LIKELIHOOD-RATIO FUNCTION
+# ================================================================
+
+extract_lr <- function(
+    larger_model,
+    smaller_model
+) {
+
+  ll_large <- stats::logLik(
+    larger_model
+  )
+
+  ll_small <- stats::logLik(
+    smaller_model
+  )
+
+  lr <- 2 * (
+    as.numeric(ll_large) -
+      as.numeric(ll_small)
+  )
+
+  df <- as.integer(
+    attr(ll_large, "df") -
+      attr(ll_small, "df")
+  )
+
+  if (
+    !is.finite(lr) ||
+    df <= 0 ||
+    lr < -1e-5
+  ) {
+
+    stop(
+      "Invalid nested-model likelihood-ratio comparison."
+    )
+  }
+
+  lr <- max(
+    0,
+    lr
+  )
+
+  list(
+
+    lr = lr,
+
+    df = df,
+
+    p = stats::pchisq(
+      lr,
+      df = df,
+      lower.tail = FALSE
+    )
+  )
+}
+
+# ================================================================
+# 17. OMNIBUS TESTS
+# ================================================================
+
+omnibus_list <- list()
+
+counter <- 1
+
+for (sample_name in names(samples)) {
+
+  for (outcome in outcomes) {
+
+    m0 <- models[[sample_name]][[outcome]][["M0"]]
+
+    m3 <- models[[sample_name]][[outcome]][["M3_combined"]]
+
+    test <- extract_lr(
+      m3,
+      m0
+    )
+
+    omnibus_list[[counter]] <- tibble::tibble(
+
+      sample = sample_name,
+      outcome = outcome,
+      n = nrow(samples[[sample_name]]),
+      lr_chisq = test$lr,
+      df = test$df,
+      p_raw = test$p,
+
+      mcfadden_r2 = 1 -
+        as.numeric(stats::logLik(m3)) /
+        as.numeric(stats::logLik(m0))
+    )
+
+    counter <- counter + 1
+  }
+}
+
+omnibus <- dplyr::bind_rows(
+  omnibus_list
+) |>
+
+  dplyr::group_by(sample) |>
+
+  dplyr::mutate(
+
+    p_bh = stats::p.adjust(
+      p_raw,
+      method = "BH"
+    ),
+
+    p_holm = stats::p.adjust(
+      p_raw,
+      method = "holm"
+    )
+  ) |>
+
+  dplyr::ungroup()
+
+# ================================================================
+# 18. NESTED-MODEL COMPARISONS
+# ================================================================
+
+nested_list <- list()
+
+counter <- 1
+
+for (sample_name in names(samples)) {
+
+  for (outcome in outcomes) {
+
+    m1 <- models[[sample_name]][[outcome]][["M1_region"]]
+
+    m2 <- models[[sample_name]][[outcome]][["M2_technology"]]
+
+    m3 <- models[[sample_name]][[outcome]][["M3_combined"]]
+
+    technology_test <- extract_lr(
+      m3,
+      m1
+    )
+
+    region_test <- extract_lr(
+      m3,
+      m2
+    )
+
+    nested_list[[counter]] <- tibble::tibble(
+
+      sample = sample_name,
+      outcome = outcome,
+      comparison = "Technology added to region",
+      n = nrow(samples[[sample_name]]),
+      lr_chisq = technology_test$lr,
+      df = technology_test$df,
+      p_raw = technology_test$p
+    )
+
+    counter <- counter + 1
+
+    nested_list[[counter]] <- tibble::tibble(
+
+      sample = sample_name,
+      outcome = outcome,
+      comparison = "Region added to technology",
+      n = nrow(samples[[sample_name]]),
+      lr_chisq = region_test$lr,
+      df = region_test$df,
+      p_raw = region_test$p
+    )
+
+    counter <- counter + 1
+  }
+}
+
+nested_comparisons <- dplyr::bind_rows(
+  nested_list
+) |>
+
+  dplyr::group_by(
+    sample,
+    comparison
+  ) |>
+
+  dplyr::mutate(
+
+    p_holm = stats::p.adjust(
+      p_raw,
+      method = "holm"
+    )
+  ) |>
+
+  dplyr::ungroup()
+
+if (
+  nrow(nested_comparisons) != 20 ||
+  any(
+    nested_comparisons$df[
+      nested_comparisons$comparison ==
+        "Technology added to region"
+    ] != 6
+  ) ||
+  any(
+    nested_comparisons$df[
+      nested_comparisons$comparison ==
+        "Region added to technology"
+    ] != 3
+  )
+) {
+
+  stop(
+    "Nested-model comparison audit failed."
+  )
+}
+
+# ================================================================
+# 19. MODEL FIT STATISTICS
+# ================================================================
+
+model_fit_list <- list()
+
+counter <- 1
+
+for (sample_name in names(samples)) {
+
+  for (outcome in outcomes) {
+
+    for (spec_name in names(model_specs)) {
+
+      model <- models[[sample_name]][[outcome]][[spec_name]]
+
+      model_fit_list[[counter]] <- tibble::tibble(
+
+        sample = sample_name,
+        outcome = outcome,
+        specification = spec_name,
+        n = nrow(samples[[sample_name]]),
+
+        log_likelihood = as.numeric(
+          stats::logLik(model)
+        ),
+
+        parameters = as.integer(
+          attr(
+            stats::logLik(model),
+            "df"
+          )
+        ),
+
+        AIC = stats::AIC(model),
+
+        BIC = stats::BIC(model),
+
+        convergence = as.integer(
+          as.character(model$convergence)[1]
+        )
+      )
+
+      counter <- counter + 1
+    }
+  }
+}
+
+model_fit <- dplyr::bind_rows(
+  model_fit_list
+)
+
+# ================================================================
+# 20. SUPPLEMENTARY TABLE S14
+# FULLY ADJUSTED ORDINAL LOGISTIC REGRESSION COEFFICIENTS
+# BOTH ANALYTICAL SAMPLES
+# ================================================================
+
 outcome_labels <- c(
+
   financing = "Financing",
   supply_chain = "Supply chain",
   fuel_supply = "Fuel supply",
@@ -342,624 +1697,346 @@ outcome_labels <- c(
   siting = "Siting"
 )
 
-predictors <- c(
-  "region", "cooling", "spectrum",
-  "fuel_type", "enrichment"
+sample_labels <- c(
+
+  all_designs = "All designs",
+  conventional = "Conventional SMRs"
 )
 
-models <- list(
-  "M1 Region" = "region",
-  "M2 Technology" = c(
-    "cooling", "spectrum", "fuel_type", "enrichment"
+table_s14 <- coefficients |>
+
+  dplyr::transmute(
+
+    Sample = unname(
+      sample_labels[sample]
+    ),
+
+    `Readiness dimension` = unname(
+      outcome_labels[outcome]
+    ),
+
+    Predictor = term_label,
+
+    n = n,
+
+    `Adjusted OR` = odds_ratio,
+
+    `95% CI lower` = ci_low,
+
+    `95% CI upper` = ci_high,
+
+    `Wald p` = p_wald,
+
+    `BH-adjusted p` = p_bh_within_outcome,
+
+    `Holm-adjusted p` = p_holm_within_outcome,
+
+    `Model status` = "OK"
+  )
+
+stopifnot(
+
+  nrow(table_s14) == 90,
+
+  sum(
+    table_s14$Sample == "All designs"
+  ) == 45,
+
+  sum(
+    table_s14$Sample == "Conventional SMRs"
+  ) == 45,
+
+  all(
+    table_s14$n[
+      table_s14$Sample == "All designs"
+    ] == 85
   ),
-  "M3 Combined" = predictors
+
+  all(
+    table_s14$n[
+      table_s14$Sample == "Conventional SMRs"
+    ] == 51
+  )
 )
 
+# ================================================================
+# 21. SUPPLEMENTARY TABLE S15
+# NESTED-MODEL LIKELIHOOD-RATIO COMPARISONS
+# ================================================================
 
-# 8. MODEL FITTING ------------------------------------------------------------
+table_s15 <- nested_comparisons |>
 
-fit_one <- function(dat, outcome, terms, sample_name, model_name) {
-  
-  diagnostic <- data.frame(
-    sample = sample_name,
-    outcome = outcome,
-    model = model_name,
-    n = nrow(dat),
-    rank = NA_integer_,
-    columns = NA_integer_,
-    convergence_code = NA_integer_,
-    hessian_condition = NA_real_,
-    warnings = "",
-    status = "Unavailable",
-    stringsAsFactors = FALSE
-  )
-  
-  formula <- stats::reformulate(terms, response = "y")
-  
-  xmat <- tryCatch(
-    stats::model.matrix(
-      stats::reformulate(terms),
-      data = dat
+  dplyr::transmute(
+
+    Sample = unname(
+      sample_labels[sample]
     ),
-    error = function(e) e
-  )
-  
-  if (inherits(xmat, "error")) {
-    diagnostic$status <- paste(
-      "Design matrix error:",
-      conditionMessage(xmat)
-    )
-    return(list(fit = NULL, diagnostic = diagnostic))
-  }
-  
-  diagnostic$rank <- qr(xmat)$rank
-  diagnostic$columns <- ncol(xmat)
-  
-  insufficient_levels <- any(
-    vapply(
-      dat[terms],
-      function(x) {
-        is.factor(x) && nlevels(droplevels(x)) < 2
-      },
-      logical(1)
-    )
-  )
-  
-  if (
-    nrow(dat) < 20 ||
-    diagnostic$rank < diagnostic$columns ||
-    insufficient_levels
-  ) {
-    diagnostic$status <- if (nrow(dat) < 20) {
-      "Insufficient complete cases"
-    } else {
-      "Rank deficient or one-level predictor"
-    }
-    
-    return(list(fit = NULL, diagnostic = diagnostic))
-  }
-  
-  warnings <- character()
-  
-  fit <- tryCatch(
-    withCallingHandlers(
-      ordinal::clm(
-        formula,
-        data = dat,
-        link = "logit",
-        Hess = TRUE,
-        control = ordinal::clm.control(maxIter = 200)
-      ),
-      warning = function(w) {
-        warnings <<- c(warnings, conditionMessage(w))
-        invokeRestart("muffleWarning")
-      }
+
+    `Readiness dimension` = unname(
+      outcome_labels[outcome]
     ),
-    error = function(e) e
-  )
-  
-  diagnostic$warnings <- paste(
-    unique(warnings),
-    collapse = " | "
-  )
-  
-  if (inherits(fit, "error")) {
-    diagnostic$status <- paste(
-      "Fit error:",
-      conditionMessage(fit)
-    )
-    return(list(fit = NULL, diagnostic = diagnostic))
-  }
-  
-  cv <- fit$convergence
-  
-  code <- suppressWarnings(
-    as.integer(
-      if (is.list(cv)) cv[[1L]] else cv[1L]
-    )
-  )
-  
-  if (length(code) != 1L || is.na(code)) {
-    code <- NA_integer_
-  }
-  
-  diagnostic$convergence_code <- code
-  
-  diagnostic$hessian_condition <- if (
-    length(fit$cond.H) == 1L
-  ) {
-    as.numeric(fit$cond.H)
-  } else {
-    NA_real_
-  }
-  
-  finite_beta <- all(is.finite(fit$beta))
-  
-  diagnostic$status <- if (
-    !is.na(code) &&
-    code == 0L &&
-    is.finite(diagnostic$hessian_condition) &&
-    diagnostic$hessian_condition < 1e8 &&
-    finite_beta &&
-    length(warnings) == 0L
-  ) {
-    "OK"
-  } else {
-    "Review diagnostics"
-  }
-  
-  list(fit = fit, diagnostic = diagnostic)
-}
 
+    Comparison = comparison,
 
-# 9. RUN REGRESSIONS ----------------------------------------------------------
+    n = n,
 
-objects <- list()
-diagnostics <- list()
-fits <- list()
-coefficients <- list()
-comparisons <- list()
-sample_audit <- list()
+    `LR chi-square` = lr_chisq,
 
-keyfun <- function(s, o, m) {
-  paste(s, o, m, sep = " | ")
-}
+    df = df,
 
-for (s in names(samples)) {
-  
-  for (o in outcomes) {
-    
-    source <- samples[[s]]
-    
-    needed <- c(o, predictors)
-    
-    complete <- stats::complete.cases(
-      source[, needed, drop = FALSE]
-    )
-    
-    dat <- droplevels(
-      source[complete, , drop = FALSE]
-    )
-    
-    if (any(
-      !is.na(dat[[o]]) &
-      !(dat[[o]] %in% 1:6)
-    )) {
-      stop("Unexpected readiness score: ", o)
-    }
-    
-    dat$y <- ordered(dat[[o]], levels = 1:6)
-    
-    sample_audit[[paste(s, o)]] <- data.frame(
-      sample = s,
-      outcome = o,
-      n_region_sample = nrow(source),
-      n_complete = nrow(dat),
-      n_excluded_missing = nrow(source) - nrow(dat)
-    )
-    
-    for (m in names(models)) {
-      
-      result <- fit_one(
-        dat, o, models[[m]], s, m
-      )
-      
-      k <- keyfun(s, o, m)
-      
-      objects[[k]] <- result
-      diagnostics[[k]] <- result$diagnostic
-      
-      fit <- result$fit
-      
-      if (is.null(fit)) next
-      
-      fits[[k]] <- data.frame(
-        sample = s,
-        outcome = o,
-        model = m,
-        n = nrow(dat),
-        logLik = as.numeric(logLik(fit)),
-        AIC = AIC(fit),
-        BIC = BIC(fit),
-        convergence_code =
-          result$diagnostic$convergence_code,
-        hessian_condition =
-          result$diagnostic$hessian_condition,
-        status = result$diagnostic$status
-      )
-      
-      mat <- coef(summary(fit))
-      
-      for (term in names(fit$beta)) {
-        
-        if (!term %in% rownames(mat)) next
-        
-        beta <- unname(mat[term, "Estimate"])
-        se <- unname(mat[term, "Std. Error"])
-        z <- beta / se
-        
-        coefficients[[paste(k, term)]] <- data.frame(
-          sample = s,
-          outcome = o,
-          model = m,
-          term = term,
-          n = nrow(dat),
-          beta = beta,
-          se = se,
-          odds_ratio = exp(beta),
-          ci_low = exp(beta - 1.96 * se),
-          ci_high = exp(beta + 1.96 * se),
-          z = z,
-          p_value = 2 * pnorm(
-            abs(z),
-            lower.tail = FALSE
-          ),
-          status = result$diagnostic$status
-        )
-      }
-    }
-    
-    for (comparison in c(
-      "Adding technology to region",
-      "Adding region to technology"
-    )) {
-      
-      smaller <- if (
-        comparison == "Adding technology to region"
-      ) {
-        "M1 Region"
-      } else {
-        "M2 Technology"
-      }
-      
-      a <- objects[[keyfun(s, o, smaller)]]
-      b <- objects[[keyfun(s, o, "M3 Combined")]]
-      
-      status <- "OK"
-      statistic <- NA_real_
-      df_difference <- NA_real_
-      p <- NA_real_
-      
-      if (is.null(a$fit) || is.null(b$fit)) {
-        
-        status <- "Model unavailable"
-        
-      } else if (
-        a$diagnostic$status != "OK" ||
-        b$diagnostic$status != "OK"
-      ) {
-        
-        status <- "Review diagnostics"
-        
-      } else {
-        
-        statistic <- 2 * (
-          as.numeric(logLik(b$fit)) -
-            as.numeric(logLik(a$fit))
-        )
-        
-        df_difference <-
-          attr(logLik(b$fit), "df") -
-          attr(logLik(a$fit), "df")
-        
-        if (
-          df_difference <= 0 ||
-          statistic < -1e-6
-        ) {
-          
-          status <- "Invalid nested comparison"
-          
-        } else {
-          
-          p <- pchisq(
-            max(statistic, 0),
-            df = df_difference,
-            lower.tail = FALSE
-          )
-        }
-      }
-      
-      comparisons[[paste(s, o, comparison)]] <- data.frame(
-        sample = s,
-        outcome = o,
-        comparison = comparison,
-        LR = statistic,
-        df = df_difference,
-        p_value = p,
-        status = status
-      )
-    }
-  }
-}
+    `Raw p` = p_raw,
 
-
-# 10. CONSOLIDATE RESULTS -----------------------------------------------------
-
-diagnostics_df <- dplyr::bind_rows(diagnostics)
-fit_df <- dplyr::bind_rows(fits)
-coef_df <- dplyr::bind_rows(coefficients)
-sample_df <- dplyr::bind_rows(sample_audit)
-
-lr_df <- dplyr::bind_rows(comparisons) %>%
-  group_by(sample, comparison) %>%
-  mutate(
-    p_holm = {
-      result <- rep(NA_real_, n())
-      valid <- !is.na(p_value)
-      
-      if (any(valid)) {
-        result[valid] <- p.adjust(
-          p_value[valid],
-          method = "holm",
-          n = n()
-        )
-      }
-      
-      result
-    }
-  ) %>%
-  ungroup()
-
-if (nrow(coef_df) == 0) {
-  coef_df <- data.frame(
-    sample = character(),
-    outcome = character(),
-    model = character(),
-    term = character(),
-    n = integer(),
-    beta = numeric(),
-    se = numeric(),
-    odds_ratio = numeric(),
-    ci_low = numeric(),
-    ci_high = numeric(),
-    z = numeric(),
-    p_value = numeric(),
-    status = character()
-  )
-}
-
-
-# 11. SPARSE-CELL AUDIT -------------------------------------------------------
-
-cross_tabs <- list()
-
-for (s in names(samples)) {
-  
-  for (pair in combn(predictors, 2, simplify = FALSE)) {
-    
-    tab <- as.data.frame(
-      table(
-        samples[[s]][[pair[1]]],
-        samples[[s]][[pair[2]]]
-      ),
-      stringsAsFactors = FALSE
-    )
-    
-    names(tab) <- c("category_1", "category_2", "n")
-    
-    tab$sample <- s
-    tab$variable_1 <- pair[1]
-    tab$variable_2 <- pair[2]
-    
-    cross_tabs[[
-      paste(s, paste(pair, collapse = "_"))
-    ]] <- tab
-  }
-}
-
-cross_df <- dplyr::bind_rows(cross_tabs)
-
-
-# 12. COMBINED-MODEL FOREST PLOT ----------------------------------------------
-
-term_labels <- c(
-  "regionEurope" = "Europe",
-  "regionOECD Asia" = "OECD Asia",
-  "regionChina/Russia" = "China/Russia",
-  "coolingNon-water" = "Non-water-cooled",
-  "spectrumFast" = "Fast spectrum",
-  "fuel_typeTRISO" = "TRISO fuel",
-  "fuel_typeOther" = "Other fuel",
-  "enrichmentHALEU" = "HALEU",
-  "enrichmentNot required" = "Enrichment not required"
-)
-
-plot_order <- c(
-  "China/Russia", "OECD Asia", "Europe",
-  "Non-water-cooled", "Fast spectrum",
-  "TRISO fuel", "Other fuel",
-  "HALEU", "Enrichment not required"
-)
-
-plot_df <- coef_df %>%
-  filter(
-    model == "M3 Combined",
-    status == "OK",
-    is.finite(odds_ratio),
-    is.finite(ci_low),
-    is.finite(ci_high),
-    odds_ratio > 0,
-    ci_low > 0,
-    ci_high > 0
-  ) %>%
-  mutate(
-    label = unname(term_labels[term]),
-    label = ifelse(is.na(label), term, label),
-    label = factor(label, levels = rev(plot_order)),
-    outcome = factor(
-      outcome,
-      levels = outcomes,
-      labels = unname(outcome_labels[outcomes])
-    )
+    `Holm-adjusted p` = p_holm
   )
 
-make_forest <- function(sample_name) {
-  
-  dat <- plot_df %>%
-    filter(sample == sample_name)
-  
-  if (nrow(dat) == 0) {
-    return(
-      ggplot() +
-        theme_void() +
-        labs(
-          title = paste(
-            sample_name, "- no valid combined models"
-          )
-        )
-    )
-  }
-  
-  ggplot(dat, aes(x = odds_ratio, y = label)) +
-    geom_vline(
-      xintercept = 1,
-      linetype = "dashed",
-      colour = "grey45",
-      linewidth = 0.3
-    ) +
-    geom_segment(
-      aes(
-        x = ci_low,
-        xend = ci_high,
-        yend = label
-      ),
-      colour = "#4C78A8",
-      linewidth = 0.4
-    ) +
-    geom_point(
-      colour = "#4C78A8",
-      size = 1.6
-    ) +
-    scale_x_log10() +
-    facet_wrap(~outcome, ncol = 3) +
-    labs(
-      title = sample_name,
-      x = "Adjusted odds ratio (log scale)",
-      y = NULL
-    ) +
-    theme_classic(base_size = 7) +
-    theme(
-      plot.title = element_text(
-        face = "bold",
-        size = 10
-      ),
-      strip.text = element_text(
-        face = "bold",
-        size = 8
-      ),
-      axis.line = element_line(
-        colour = "grey35",
-        linewidth = 0.3
-      ),
-      panel.spacing = grid::unit(8, "mm")
-    )
-}
+stopifnot(
 
-combined <- cowplot::plot_grid(
-  make_forest("All designs"),
-  make_forest("Conventional SMRs"),
-  ncol = 1,
-  labels = c("a", "b"),
-  label_size = 11,
-  label_fontface = "bold"
+  nrow(table_s15) == 20,
+
+  sum(
+    table_s15$Sample == "All designs"
+  ) == 10,
+
+  sum(
+    table_s15$Sample == "Conventional SMRs"
+  ) == 10
 )
 
-png_file <- paste0(output_prefix, "_forest.png")
-pdf_file <- paste0(output_prefix, "_forest.pdf")
+# ================================================================
+# 22. CONSOLIDATED EXCEL WORKBOOK
+# ================================================================
 
-ggplot2::ggsave(
-  png_file,
-  combined,
-  width = 280,
-  height = 230,
-  units = "mm",
-  dpi = 600,
-  bg = "white"
+excel_tabs <- list(
+
+  "table_S14" = table_s14,
+
+  "table_S15" = table_s15,
+
+  "Adjusted odds ratios" = coefficients,
+
+  "Nested LR comparisons" = nested_comparisons,
+
+  "Omnibus tests" = omnibus,
+
+  "Model fit statistics" = model_fit,
+
+  "Model audit" = model_audit,
+
+  "Coefficient audit" = coefficient_audit,
+
+  "Sample audit" = sample_audit,
+
+  "Region audit" = region_audit,
+
+  "Excluded region" = excluded_region,
+
+  "Excluded enrichment" = excluded_enrichment,
+
+  "Fuel distribution" = fuel_distribution,
+
+  "Fuel by region" = fuel_by_region,
+
+  "Fuel by cooling" = fuel_by_cooling,
+
+  "Fuel by spectrum" = fuel_by_spectrum,
+
+  "Fuel by fuel" = fuel_by_fuel,
+
+  "Fuel by enrichment" = fuel_by_enrichment,
+
+  "Classification audit" = data,
+
+  "Complete case all" = all_designs,
+
+  "Complete case SMRs" = conventional
 )
-
-ggplot2::ggsave(
-  pdf_file,
-  combined,
-  width = 280,
-  height = 230,
-  units = "mm",
-  bg = "white"
-)
-
-
-# 13. EXCEL OUTPUT ------------------------------------------------------------
 
 wb <- openxlsx::createWorkbook()
 
-write_sheet <- function(name, data) {
-  
-  openxlsx::addWorksheet(wb, name)
-  openxlsx::writeData(wb, name, data)
-  
-  if (ncol(data) > 0) {
-    
-    openxlsx::addStyle(
+header_style <- openxlsx::createStyle(
+
+  fgFill = "#17324D",
+
+  fontColour = "#FFFFFF",
+
+  textDecoration = "bold",
+
+  border = "Bottom",
+
+  borderColour = "#B7C9D6"
+)
+
+for (sheet_name in names(excel_tabs)) {
+
+  df <- as.data.frame(
+    excel_tabs[[sheet_name]]
+  )
+
+  openxlsx::addWorksheet(
+    wb,
+    sheet_name
+  )
+
+  openxlsx::writeData(
+
+    wb,
+
+    sheet_name,
+
+    df,
+
+    headerStyle = header_style
+  )
+
+  openxlsx::freezePane(
+
+    wb,
+
+    sheet_name,
+
+    firstRow = TRUE
+  )
+
+  if (
+    nrow(df) > 0 &&
+    ncol(df) > 0
+  ) {
+
+    openxlsx::addFilter(
+
       wb,
-      name,
-      openxlsx::createStyle(
-        textDecoration = "bold",
-        fgFill = "#DCE6F1"
-      ),
+
+      sheet_name,
+
       rows = 1,
-      cols = seq_len(ncol(data)),
-      gridExpand = TRUE
-    )
-    
-    openxlsx::freezePane(
-      wb, name, firstRow = TRUE
-    )
-    
-    openxlsx::setColWidths(
-      wb,
-      name,
-      cols = seq_len(ncol(data)),
-      widths = "auto"
+
+      cols = seq_len(
+        ncol(df)
+      )
     )
   }
+
+  openxlsx::setColWidths(
+
+    wb,
+
+    sheet_name,
+
+    cols = seq_len(
+      ncol(df)
+    ),
+
+    widths = "auto"
+  )
 }
 
-write_sheet("Model diagnostics", diagnostics_df)
-write_sheet("Model fit", fit_df)
-write_sheet("Adjusted odds ratios", coef_df)
-write_sheet("LR comparisons", lr_df)
-write_sheet("Sample audit", sample_df)
-write_sheet("Region audit", region_audit)
-write_sheet("Cross tabulations", cross_df)
-write_sheet("Design audit", df)
-
-excel_file <- paste0(output_prefix, "_results.xlsx")
-
 openxlsx::saveWorkbook(
+
   wb,
-  excel_file,
+
+  file = excel_file,
+
   overwrite = TRUE
 )
 
+# ================================================================
+# 23. FINAL VERIFICATION
+# ================================================================
 
-# 14. SUMMARY -----------------------------------------------------------------
+if (
+  !file.exists(excel_file) ||
+  is.na(file.info(excel_file)$size) ||
+  file.info(excel_file)$size == 0
+) {
 
-cat("\n====================================================\n")
-cat("SUPPLEMENTARY TABLES S14 AND S15\n")
-cat("JOINT REGIONAL AND TECHNOLOGICAL MODELS\n")
-cat("====================================================\n")
+  stop(
+    "Missing or empty output workbook."
+  )
+}
 
-cat("\nREGRESSION SAMPLE SIZES:\n")
-print(vapply(samples, nrow, integer(1)))
+stopifnot(
 
-cat("\nMODEL DIAGNOSTICS:\n")
-print(diagnostics_df, row.names = FALSE)
+  nrow(model_audit) == 40,
 
-cat("\nLIKELIHOOD-RATIO COMPARISONS:\n")
-print(lr_df, row.names = FALSE)
+  all(
+    model_audit$status == "Converged"
+  ),
 
-cat("\nOUTPUT FILES:\n")
-cat(excel_file, "\n")
-cat(png_file, "\n")
-cat(pdf_file, "\n")
+  nrow(model_fit) == 40,
 
-cat("\nAnalysis complete.\n")
+  nrow(coefficients) == 90,
+
+  nrow(table_s14) == 90,
+
+  nrow(table_s15) == 20,
+
+  nrow(omnibus) == 10
+)
+
+cat("\n========================================\n")
+cat("SUPPLEMENTARY TABLES S14 AND S15 COMPLETE\n")
+cat("========================================\n")
+
+cat("\nSAMPLE SIZES:\n")
+
+print(sample_audit)
+
+cat("\nREGIONAL DISTRIBUTION:\n")
+
+print(region_audit)
+
+cat("\nEXCLUDED ENRICHMENT:\n")
+
+print(
+  excluded_enrichment,
+  n = Inf,
+  width = Inf
+)
+
+cat("\nMODEL STATUS:\n")
+
+print(
+  model_audit,
+  n = Inf
+)
+
+cat("\nCOEFFICIENT COUNTS:\n")
+
+print(
+  coefficient_audit,
+  n = Inf
+)
+
+cat("\nSUPPLEMENTARY TABLE S14:\n")
+
+print(
+  table_s14,
+  n = Inf
+)
+
+cat("\nSUPPLEMENTARY TABLE S15:\n")
+
+print(
+  table_s15,
+  n = Inf
+)
+
+cat("\nOMNIBUS TESTS:\n")
+
+print(
+  omnibus,
+  n = Inf
+)
+
+cat("\nOUTPUT WORKBOOK:\n")
+
+cat(
+  excel_file,
+  "\n"
+)
+
+cat("\nALL FIVE READINESS DIMENSIONS INCLUDED.\n")
+cat("ALL 40 MODELS PASSED VALIDATION.\n")
+cat("ALL 90 COEFFICIENTS EXPORTED TO TABLE S14.\n")
+cat("ALL 20 NESTED COMPARISONS EXPORTED TO TABLE S15.\n")
+cat("========================================\n")
