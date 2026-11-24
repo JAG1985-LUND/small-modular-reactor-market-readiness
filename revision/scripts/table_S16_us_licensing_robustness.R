@@ -1,213 +1,859 @@
-# Supplementary Table S16 | US versus non-US licensing readiness
-# NEA SMR Dashboard, Edition 4
-# Run from any directory inside the repository, or set SMR_REPO_ROOT.
-# Input:  revision/data/us_licensing_regression_check.xlsx
-# Output: revision/figures/table_S16_us_licensing_robustness_results.xlsx
+# ================================================================
+# SUPPLEMENTARY TABLE S16
+# US VERSUS NON-US LICENSING READINESS
+# NEA SMR DASHBOARD - EDITION 4
+#
+# Panel A: Unadjusted and adjusted ordinal logistic regression
+# Panel B: Descriptive licensing readiness by geography
+# Panel C: Model diagnostics and nested-model LR comparisons
+#
+# All designs:       expected n = 91 (US 35, non-US 56)
+# Conventional SMRs: expected n = 53 (US 16, non-US 37)
+#
+# Geographic reference: Other (non-US)
+#
+# Adjusted model controls for the arithmetic mean of:
+# financing, supply chain, fuel supply, siting and
+# stakeholder engagement.
+#
+# Both regressions use identical complete cases.
+#
+# Run from any directory inside the repository,
+# or set the SMR_REPO_ROOT environment variable.
+#
+# INPUT:
+# revision/data/us_licensing_regression_check.xlsx
+#
+# OUTPUT:
+# revision/figures/table_S16_us_licensing_robustness_results.xlsx
+#
+# Updated JAG analytical specification retained.
+# GitHub repository paths retained.
+# Adapted script not independently executed.
+# ================================================================
 
 
-required <- c('readxl', 'dplyr', 'tidyr', 'MASS', 'openxlsx')
-missing <- required[!vapply(required, requireNamespace, logical(1), quietly = TRUE)]
-if (length(missing)) stop('Install required R packages: ', paste(missing, collapse = ', '))
+# 1. PACKAGES -----------------------------------------------------
+
+packages <- c("readxl", "dplyr", "tidyr", "MASS", "openxlsx")
+
+missing_packages <- packages[
+  !vapply(packages, requireNamespace, logical(1), quietly = TRUE)
+]
+
+if (length(missing_packages) > 0) {
+  install.packages(missing_packages)
+}
+
+suppressPackageStartupMessages({
+  library(readxl)
+  library(dplyr)
+  library(tidyr)
+  library(MASS)
+  library(openxlsx)
+})
+
+
+# 2. FILE PATHS ---------------------------------------------------
 
 find_root <- function() {
-  override <- Sys.getenv('SMR_REPO_ROOT', unset = '')
-  starts <- unique(c(if (nzchar(override)) override, getwd()))
+
+  override <- Sys.getenv("SMR_REPO_ROOT", unset = "")
+
+  starts <- unique(
+    c(
+      if (nzchar(override)) override,
+      getwd()
+    )
+  )
+
   for (start in starts) {
-    p <- normalizePath(start, winslash = '/', mustWork = FALSE)
+
+    p <- normalizePath(
+      start,
+      winslash = "/",
+      mustWork = FALSE
+    )
+
     repeat {
-      if (dir.exists(file.path(p, 'revision', 'data')) &&
-          dir.exists(file.path(p, 'revision', 'scripts'))) return(p)
+
+      if (
+        dir.exists(file.path(p, "revision", "data")) &&
+        dir.exists(file.path(p, "revision", "scripts"))
+      ) {
+        return(p)
+      }
+
       parent <- dirname(p)
-      if (identical(parent, p)) break
+
+      if (identical(parent, p)) {
+        break
+      }
+
       p <- parent
     }
   }
-  stop('Repository root not found. Run within the repository or set SMR_REPO_ROOT.')
-}
-root <- find_root()
-input <- file.path(root, 'revision', 'data', 'us_licensing_regression_check.xlsx')
-out_dir <- file.path(root, 'revision', 'figures')
-out_file <- file.path(out_dir, 'table_S16_us_licensing_robustness_results.xlsx')
-if (!file.exists(input)) stop('Missing input: ', input)
-dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-sheets <- readxl::excel_sheets(input)
-sheet <- if ('nea_50' %in% sheets) 'nea_50' else sheets[[1]]
-raw <- as.data.frame(readxl::read_excel(input, sheet = sheet))
-names(raw) <- trimws(names(raw))
-find_col <- function(options) {
-  hit <- intersect(options, names(raw))
-  if (!length(hit)) stop('Missing column; expected one of: ', paste(options, collapse = ', '))
-  hit[[1]]
+  stop(
+    "Repository root not found. ",
+    "Run within the repository or set SMR_REPO_ROOT."
+  )
 }
-country <- find_col(c('country', 'country_code', 'designer_country', 'developer_country'))
-micro <- find_col(c('microreactor', 'micro_reactor', 'classification'))
-columns <- list(
-  licensing = c('licensing', 'licensing_readiness', 'licensing_score'),
-  financing = c('financing', 'financing_readiness', 'financing_score'),
-  supply_chain = c('supply_chain', 'supply_chain_readiness', 'supply_chain_score'),
-  fuel_supply = c('fuel_supply', 'fuel_supply_readiness', 'fuel_supply_score'),
-  siting = c('siting', 'siting_readiness', 'siting_score'),
-  stakeholder_engagement = c('stakeholder_engagement', 'stakeholder_engagement_readiness',
-                             'stakeholder_engagement_score')
+
+root <- find_root()
+
+input_file <- file.path(
+  root,
+  "revision",
+  "data",
+  "us_licensing_regression_check.xlsx"
 )
-resolved <- vapply(columns, find_col, character(1))
-normalise <- function(x) tolower(trimws(gsub('\\s+', ' ', as.character(x))))
-dat <- raw
-if ('edition' %in% names(dat)) {
-  dat <- dat[suppressWarnings(as.numeric(as.character(dat$edition))) == 4 &
-               !is.na(dat$edition), , drop = FALSE]
+
+output_dir <- file.path(
+  root,
+  "revision",
+  "figures"
+)
+
+dir.create(
+  output_dir,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+output_file <- file.path(
+  output_dir,
+  "table_S16_us_licensing_robustness_results.xlsx"
+)
+
+if (!file.exists(input_file)) {
+  stop("Input file not found: ", input_file)
 }
-design_col <- intersect(c('design', 'smr_design'), names(dat))
-if (length(design_col)) {
-  names_ <- toupper(trimws(as.character(dat[[design_col[[1]]]])))
-  dat <- dat[!is.na(names_) & nzchar(names_) & names_ != 'DF-CDE', , drop = FALSE]
+
+
+# 3. IMPORT DATA --------------------------------------------------
+
+sheets <- readxl::excel_sheets(input_file)
+
+sheet_name <- if ("nea_50" %in% sheets) {
+  "nea_50"
+} else {
+  sheets[1]
 }
-country_values <- normalise(dat[[country]])
-micro_values <- normalise(dat[[micro]])
-us_values <- c('united states', 'united states of america', 'usa', 'us', 'u.s.', 'u.s.a.')
-if (any(is.na(country_values) | country_values %in% c('', 'na', 'n/a'))) {
-  stop('Missing country classifications; inspect source workbook.')
+
+dat <- as.data.frame(
+  readxl::read_excel(input_file, sheet = sheet_name)
+)
+
+names(dat) <- trimws(names(dat))
+
+cat("\nImported worksheet:", sheet_name, "\n")
+cat("Imported rows:", nrow(dat), "\n")
+
+
+# 4. CHECK REQUIRED COLUMNS ---------------------------------------
+
+required_cols <- c(
+  "design",
+  "country",
+  "region",
+  "microreactor",
+  "licensing",
+  "financing",
+  "supply_chain",
+  "fuel_supply",
+  "siting",
+  "stakeholder_engagement"
+)
+
+missing_cols <- setdiff(required_cols, names(dat))
+
+if (length(missing_cols) > 0) {
+  stop(
+    "Missing columns: ",
+    paste(missing_cols, collapse = ", ")
+  )
 }
-dat$us_design <- country_values %in% us_values
-micro_true <- c('true', 't', 'yes', 'y', '1', 'microreactor', 'micro_reactor', 'micro reactor')
-micro_false <- c('false', 'f', 'no', 'n', '0', 'smr', 'conventional',
-                 'conventional smr', 'small modular reactor')
-unknown <- !micro_values %in% c(micro_true, micro_false)
-if (any(unknown)) stop('Unrecognised reactor classifications: ',
-                       paste(unique(micro_values[unknown]), collapse = ', '))
-dat$is_microreactor <- micro_values %in% micro_true
-for (v in names(resolved)) {
-  dat[[v]] <- suppressWarnings(as.numeric(as.character(dat[[resolved[[v]]]])))
-  if (any(!is.na(dat[[v]]) & !dat[[v]] %in% 1:6)) stop('Invalid 1-6 scores: ', v)
+
+normalise <- function(x) {
+  tolower(trimws(gsub("\\s+", " ", as.character(x))))
 }
-other_five <- c('financing', 'supply_chain', 'fuel_supply', 'siting', 'stakeholder_engagement')
-dat$other_five_complete <- complete.cases(dat[, other_five, drop = FALSE])
+
+
+# 5. CLEAN DATA ---------------------------------------------------
+
+if ("edition" %in% names(dat)) {
+
+  edition <- suppressWarnings(
+    as.numeric(as.character(dat$edition))
+  )
+
+  dat <- dat[
+    !is.na(edition) & edition == 4,
+    ,
+    drop = FALSE
+  ]
+}
+
+design_names <- toupper(trimws(as.character(dat$design)))
+
+dat <- dat[
+  !is.na(design_names) &
+    nzchar(design_names) &
+    design_names != "DF-CDE",
+  ,
+  drop = FALSE
+]
+
+if (anyDuplicated(dat$design)) {
+  stop("Duplicate design names detected.")
+}
+
+dat$region_clean <- normalise(dat$region)
+dat$country_clean <- normalise(dat$country)
+dat$micro_clean <- normalise(dat$microreactor)
+
+
+# 6. US VERSUS OTHER CLASSIFICATION -------------------------------
+
+us_values <- c(
+  "us", "usa", "u.s.",
+  "united states", "united states of america"
+)
+
+other_values <- c(
+  "other", "non-us", "non us", "non_us"
+)
+
+valid_regions <- c(us_values, other_values)
+
+if (any(
+  is.na(dat$region_clean) |
+  !(dat$region_clean %in% valid_regions)
+)) {
+  print(unique(dat$region_clean))
+  stop("Unexpected region coding. Expected US or Other.")
+}
+
+dat$us_design <- dat$region_clean %in% us_values
+
+# Verify region coding against country.
+
+if (any(
+  is.na(dat$country_clean) |
+  dat$country_clean %in% c("", "na", "n/a")
+)) {
+  stop("Missing country classifications.")
+}
+
+country_us <- dat$country_clean %in% us_values
+
+if (any(dat$us_design != country_us)) {
+
+  print(
+    dat[
+      dat$us_design != country_us,
+      c("design", "country", "region")
+    ]
+  )
+
+  stop("Region and country coding disagree.")
+}
+
+dat$us_group <- factor(
+  ifelse(dat$us_design, "United States", "Non-US"),
+  levels = c("Non-US", "United States")
+)
+
+
+# 7. MICROREACTOR CLASSIFICATION ----------------------------------
+
+micro_true <- c(
+  "true", "t", "yes", "y", "1",
+  "microreactor", "micro_reactor", "micro reactor"
+)
+
+micro_false <- c(
+  "false", "f", "no", "n", "0",
+  "smr", "conventional", "conventional smr",
+  "small modular reactor"
+)
+
+if (any(
+  is.na(dat$micro_clean) |
+  !(dat$micro_clean %in% c(micro_true, micro_false))
+)) {
+  print(unique(dat$micro_clean))
+  stop("Unexpected microreactor classification.")
+}
+
+dat$is_microreactor <- dat$micro_clean %in% micro_true
+
+
+# 8. READINESS VARIABLES ------------------------------------------
+
+readiness_vars <- c(
+  "licensing",
+  "financing",
+  "supply_chain",
+  "fuel_supply",
+  "siting",
+  "stakeholder_engagement"
+)
+
+for (v in readiness_vars) {
+
+  dat[[v]] <- suppressWarnings(
+    as.numeric(as.character(dat[[v]]))
+  )
+
+  invalid <- !is.na(dat[[v]]) & !(dat[[v]] %in% 1:6)
+
+  if (any(invalid)) {
+    stop("Invalid readiness scores in: ", v)
+  }
+}
+
+
+# 9. NON-LICENSING READINESS --------------------------------------
+
+other_five <- c(
+  "financing",
+  "supply_chain",
+  "fuel_supply",
+  "siting",
+  "stakeholder_engagement"
+)
+
+dat$other_five_complete <- complete.cases(
+  dat[, other_five, drop = FALSE]
+)
+
 dat$non_licensing_readiness <- NA_real_
-dat$non_licensing_readiness[dat$other_five_complete] <-
-  rowMeans(dat[dat$other_five_complete, other_five, drop = FALSE])
-dat$us_group <- factor(ifelse(dat$us_design, 'United States', 'Non-US'),
-                       levels = c('Non-US', 'United States'))
-dat$adjusted_model_complete <- !is.na(dat$licensing) & !is.na(dat$non_licensing_readiness)
-dat$sample_inclusion <- ifelse(dat$is_microreactor, 'All designs only', 'Both samples')
-samples <- list('All designs' = dat,
-                'Conventional SMRs' = dat[!dat$is_microreactor, , drop = FALSE])
-expected <- c('All designs' = 91L, 'Conventional SMRs' = 53L)
-for (s in names(samples)) {
-  if (nrow(samples[[s]]) != expected[[s]])
-    stop(s, ': expected ', expected[[s]], ' designs; found ', nrow(samples[[s]]),
-         '. Check input and filtering before interpreting results.')
+
+complete_rows <- which(dat$other_five_complete)
+
+if (length(complete_rows) > 0) {
+
+  dat$non_licensing_readiness[complete_rows] <- rowMeans(
+    dat[complete_rows, other_five, drop = FALSE]
+  )
 }
+
+dat$model_complete <- complete.cases(
+  dat[, c("licensing", "non_licensing_readiness")]
+)
+
+dat$sample_inclusion <- ifelse(
+  dat$is_microreactor,
+  "All designs only",
+  "Both samples"
+)
+
+
+# 10. DEFINE AND CHECK SAMPLES ------------------------------------
+
+samples <- list(
+  "All designs" = dat,
+  "Conventional SMRs" = dat[
+    !dat$is_microreactor,
+    ,
+    drop = FALSE
+  ]
+)
+
+expected_counts <- data.frame(
+  sample = c("All designs", "Conventional SMRs"),
+  n_total = c(91L, 53L),
+  n_us = c(35L, 16L),
+  n_non_us = c(56L, 37L)
+)
+
+sample_counts <- do.call(
+  rbind,
+  lapply(names(samples), function(s) {
+
+    x <- samples[[s]]
+
+    data.frame(
+      sample = s,
+      n_total = nrow(x),
+      n_us = sum(x$us_design),
+      n_non_us = sum(!x$us_design),
+      n_complete = sum(x$model_complete)
+    )
+  })
+)
+
+rownames(sample_counts) <- NULL
+
+cat("\nSAMPLE COUNTS:\n")
+print(sample_counts)
+
+for (i in seq_len(nrow(expected_counts))) {
+
+  observed <- sample_counts[i, ]
+  expected <- expected_counts[i, ]
+
+  if (
+    observed$n_total != expected$n_total ||
+    observed$n_us != expected$n_us ||
+    observed$n_non_us != expected$n_non_us
+  ) {
+    stop(
+      "Sample count mismatch for ",
+      observed$sample,
+      ". Check the input workbook."
+    )
+  }
+
+  if (observed$n_complete != observed$n_total) {
+    stop(
+      "Missing readiness data in ",
+      observed$sample,
+      ". The original S16 models require complete cases."
+    )
+  }
+}
+
+
+# 11. MODEL-FITTING FUNCTION --------------------------------------
 
 fit_sample <- function(df, sample_name) {
-  tmp <- df[df$adjusted_model_complete, , drop = FALSE]
-  if (!nrow(tmp) || length(unique(tmp$us_group)) != 2L)
-    stop('Missing model cases or geographic group in ', sample_name)
-  if (length(unique(tmp$licensing)) < 2L) stop('Insufficient outcome variation: ', sample_name)
-  tmp$licensing_ordinal <- ordered(tmp$licensing, levels = 1:6)
-  formulas <- list(Unadjusted = licensing_ordinal ~ us_group,
-                   Adjusted = licensing_ordinal ~ us_group + non_licensing_readiness)
-  warning_log <- character()
-  fit_polr <- function(formula) withCallingHandlers(
-    MASS::polr(formula, data = tmp, method = 'logistic', Hess = TRUE,
-               control = list(maxit = 2000)),
-    warning = function(w) {
-      warning_log <<- c(warning_log, conditionMessage(w))
-      invokeRestart('muffleWarning')
-    }
+
+  tmp <- df[df$model_complete, , drop = FALSE]
+
+  tmp$licensing_ordinal <- ordered(
+    tmp$licensing,
+    levels = 1:6
   )
-  null <- fit_polr(licensing_ordinal ~ 1)
-  fits <- lapply(formulas, fit_polr)
-  estimates <- lapply(names(fits), function(model) {
-    fit <- fits[[model]]
-    tab <- coef(summary(fit))
-    terms <- names(coef(fit))
-    beta <- unname(coef(fit)[terms])
-    se <- tab[terms, 'Std. Error']
-    lr <- max(0, 2 * (as.numeric(logLik(fit)) - as.numeric(logLik(null))))
-    df_lr <- attr(logLik(fit), 'df') - attr(logLik(null), 'df')
-    data.frame(sample = sample_name, model = model, predictor = terms,
-               n_total = nrow(tmp), n_us = sum(tmp$us_design), n_non_us = sum(!tmp$us_design),
-               coefficient = beta, standard_error = se, odds_ratio = exp(beta),
-               ci_low_95 = exp(beta - 1.96 * se), ci_high_95 = exp(beta + 1.96 * se),
-               p_wald = 2 * pnorm(abs(beta / se), lower.tail = FALSE),
-               lr_statistic = lr, lr_df = df_lr, p_lr = pchisq(lr, df_lr, lower.tail = FALSE),
-               mcfadden_r2 = 1 - as.numeric(logLik(fit)) / as.numeric(logLik(null)))
-  })
-  diagnostics <- lapply(names(fits), function(model) {
-    fit <- fits[[model]]
-    data.frame(sample = sample_name, model = model, n = nrow(tmp),
-               convergence_code = fit$convergence,
-               max_abs_coefficient = max(abs(coef(fit))),
-               max_standard_error = max(coef(summary(fit))[names(coef(fit)), 'Std. Error']),
-               warnings = paste(unique(warning_log), collapse = ' | '))
-  })
-  lr_change <- max(0, 2 * (as.numeric(logLik(fits$Adjusted)) -
-                             as.numeric(logLik(fits$Unadjusted))))
-  comparison <- data.frame(sample = sample_name, n = nrow(tmp),
-                           lr_change = lr_change, df = 1L,
-                           p_change = pchisq(lr_change, 1, lower.tail = FALSE))
-  list(estimates = dplyr::bind_rows(estimates),
-       diagnostics = dplyr::bind_rows(diagnostics), comparison = comparison)
+
+  if (length(unique(tmp$us_group)) != 2) {
+    stop("Both US and non-US groups are required.")
+  }
+
+  if (length(unique(tmp$licensing)) < 2) {
+    stop("Insufficient licensing variation.")
+  }
+
+  model_formulas <- list(
+    Unadjusted = licensing_ordinal ~ us_group,
+    Adjusted = licensing_ordinal ~
+      us_group + non_licensing_readiness
+  )
+
+  # Fit the intercept-only model once.
+
+  null_fit <- MASS::polr(
+    licensing_ordinal ~ 1,
+    data = tmp,
+    method = "logistic",
+    Hess = TRUE,
+    control = list(maxit = 2000)
+  )
+
+  fitted_models <- list()
+  warning_records <- list()
+
+  for (model_name in names(model_formulas)) {
+
+    current_warnings <- character(0)
+
+    fitted_models[[model_name]] <- withCallingHandlers(
+      MASS::polr(
+        model_formulas[[model_name]],
+        data = tmp,
+        method = "logistic",
+        Hess = TRUE,
+        control = list(maxit = 2000)
+      ),
+      warning = function(w) {
+        current_warnings <<- c(
+          current_warnings,
+          conditionMessage(w)
+        )
+        invokeRestart("muffleWarning")
+      }
+    )
+
+    warning_records[[model_name]] <- paste(
+      unique(current_warnings),
+      collapse = " | "
+    )
+  }
+
+  # Extract all coefficients and model-level statistics.
+
+  estimate_list <- list()
+  diagnostic_list <- list()
+
+  for (model_name in names(fitted_models)) {
+
+    fit <- fitted_models[[model_name]]
+
+    coefficient_table <- coef(summary(fit))
+    predictor_terms <- names(coef(fit))
+
+    beta <- as.numeric(coef(fit)[predictor_terms])
+
+    se <- as.numeric(
+      coefficient_table[predictor_terms, "Std. Error"]
+    )
+
+    z <- beta / se
+
+    lr <- max(
+      0,
+      2 * (
+        as.numeric(logLik(fit)) -
+          as.numeric(logLik(null_fit))
+      )
+    )
+
+    lr_df <- as.numeric(
+      attr(logLik(fit), "df") -
+        attr(logLik(null_fit), "df")
+    )
+
+    mcfadden_r2 <- 1 -
+      as.numeric(logLik(fit)) /
+      as.numeric(logLik(null_fit))
+
+    estimate_list[[model_name]] <- data.frame(
+      sample = sample_name,
+      model = model_name,
+      predictor = predictor_terms,
+      n_total = nrow(tmp),
+      n_us = sum(tmp$us_design),
+      n_non_us = sum(!tmp$us_design),
+      coefficient = beta,
+      standard_error = se,
+      odds_ratio = exp(beta),
+      ci_low_95 = exp(beta - 1.96 * se),
+      ci_high_95 = exp(beta + 1.96 * se),
+      p_wald = 2 * stats::pnorm(
+        abs(z),
+        lower.tail = FALSE
+      ),
+      lr_statistic = lr,
+      lr_df = lr_df,
+      p_lr = stats::pchisq(
+        lr,
+        df = lr_df,
+        lower.tail = FALSE
+      ),
+      mcfadden_r2 = mcfadden_r2,
+      row.names = NULL
+    )
+
+    diagnostic_list[[model_name]] <- data.frame(
+      sample = sample_name,
+      model = model_name,
+      n = nrow(tmp),
+      convergence_code = fit$convergence,
+      max_abs_coefficient = max(abs(coef(fit))),
+      max_standard_error = max(se),
+      warnings = warning_records[[model_name]]
+    )
+  }
+
+  # Compare adjusted and unadjusted models directly.
+
+  fit_unadjusted <- fitted_models[["Unadjusted"]]
+  fit_adjusted <- fitted_models[["Adjusted"]]
+
+  lr_change <- max(
+    0,
+    2 * (
+      as.numeric(logLik(fit_adjusted)) -
+        as.numeric(logLik(fit_unadjusted))
+    )
+  )
+
+  comparison <- data.frame(
+    sample = sample_name,
+    n = nrow(tmp),
+    lr_change = lr_change,
+    df = 1L,
+    p_change = stats::pchisq(
+      lr_change,
+      df = 1,
+      lower.tail = FALSE
+    )
+  )
+
+  list(
+    estimates = dplyr::bind_rows(estimate_list),
+    diagnostics = dplyr::bind_rows(diagnostic_list),
+    comparison = comparison
+  )
 }
-models <- Map(fit_sample, samples, names(samples))
-regression <- dplyr::bind_rows(lapply(models, `[[`, 'estimates'))
-diagnostics <- dplyr::bind_rows(lapply(models, `[[`, 'diagnostics'))
-comparison <- dplyr::bind_rows(lapply(models, `[[`, 'comparison'))
-us_effect <- regression[regression$predictor == 'us_groupUnited States', , drop = FALSE]
+
+
+# 12. RUN BOTH SAMPLES --------------------------------------------
+
+model_outputs <- list()
+
+for (s in names(samples)) {
+
+  cat("\nRunning models:", s, "\n")
+
+  model_outputs[[s]] <- fit_sample(
+    samples[[s]],
+    s
+  )
+}
+
+regression_results <- dplyr::bind_rows(
+  lapply(model_outputs, function(x) x$estimates)
+)
+
+model_diagnostics <- dplyr::bind_rows(
+  lapply(model_outputs, function(x) x$diagnostics)
+)
+
+model_comparison <- dplyr::bind_rows(
+  lapply(model_outputs, function(x) x$comparison)
+)
+
+
+# 13. PANEL A: US EFFECTS -----------------------------------------
+
+us_effect_summary <- regression_results[
+  regression_results$predictor == "us_groupUnited States",
+  c(
+    "sample", "model", "n_total", "n_us", "n_non_us",
+    "odds_ratio", "ci_low_95", "ci_high_95", "p_wald"
+  ),
+  drop = FALSE
+]
+
+rownames(us_effect_summary) <- NULL
+
+if (nrow(us_effect_summary) != 4) {
+  stop("Expected four US-effect estimates.")
+}
+
 us_effect_wide <- tidyr::pivot_wider(
-  us_effect[, c('sample', 'model', 'odds_ratio', 'ci_low_95', 'ci_high_95', 'p_wald')],
-  names_from = 'model', values_from = c('odds_ratio', 'ci_low_95', 'ci_high_95', 'p_wald'),
-  names_sep = '_')
+  us_effect_summary[
+    ,
+    c(
+      "sample", "model", "odds_ratio",
+      "ci_low_95", "ci_high_95", "p_wald"
+    ),
+    drop = FALSE
+  ],
+  names_from = "model",
+  values_from = c(
+    "odds_ratio",
+    "ci_low_95",
+    "ci_high_95",
+    "p_wald"
+  ),
+  names_sep = "_"
+)
+
 us_effect_wide$or_ratio_adjusted_to_unadjusted <-
-  us_effect_wide$odds_ratio_Adjusted / us_effect_wide$odds_ratio_Unadjusted
-us_effect_wide$log_or_change_pct <- 100 *
-  (log(us_effect_wide$odds_ratio_Adjusted) - log(us_effect_wide$odds_ratio_Unadjusted)) /
-  log(us_effect_wide$odds_ratio_Unadjusted)
+  us_effect_wide$odds_ratio_Adjusted /
+  us_effect_wide$odds_ratio_Unadjusted
 
-descriptive <- dplyr::bind_rows(lapply(names(samples), function(s) {
-  df <- samples[[s]]
-  df <- dplyr::group_by(df, us_group)
-  out <- dplyr::summarise(df, n = dplyr::n(),
-                          licensing_mean = mean(licensing, na.rm = TRUE),
-                          licensing_median = median(licensing, na.rm = TRUE),
-                          licensing_sd = sd(licensing, na.rm = TRUE),
-                          non_licensing_mean = mean(non_licensing_readiness, na.rm = TRUE),
-                          non_licensing_median = median(non_licensing_readiness, na.rm = TRUE),
-                          non_licensing_sd = sd(non_licensing_readiness, na.rm = TRUE), .groups = 'drop')
-  dplyr::mutate(out, sample = s, .before = 1)
-}))
-distributions <- dplyr::bind_rows(lapply(names(samples), function(s) {
-  df <- samples[[s]]
-  df <- df[!is.na(df$licensing), , drop = FALSE]
-  out <- dplyr::count(df, us_group, licensing, name = 'n')
-  out <- tidyr::complete(out, us_group, licensing = 1:6, fill = list(n = 0))
-  out <- dplyr::group_by(out, us_group)
-  out <- dplyr::mutate(out, share = n / sum(n))
-  dplyr::mutate(dplyr::ungroup(out), sample = s, .before = 1)
-}))
-audit_cols <- unique(c(intersect(c('design', 'smr_design', 'country', 'country_code',
-                                   'classification', 'microreactor', 'micro_reactor'), names(dat)),
-                       'us_group', 'is_microreactor', names(columns),
-                       'non_licensing_readiness', 'other_five_complete',
-                       'adjusted_model_complete', 'sample_inclusion'))
-audit <- dat[, audit_cols, drop = FALSE]
+us_effect_wide$log_or_change_pct <- 100 * (
+  log(us_effect_wide$odds_ratio_Adjusted) -
+    log(us_effect_wide$odds_ratio_Unadjusted)
+) / log(us_effect_wide$odds_ratio_Unadjusted)
 
-sheets_out <- list('US effect summary' = us_effect, 'OR change' = us_effect_wide,
-                   'All coefficients' = regression, 'Model comparison' = comparison,
-                   'Descriptive statistics' = descriptive, 'Licensing distributions' = distributions,
-                   'Model diagnostics' = diagnostics, 'Design audit' = audit)
+
+# 14. PANEL B: DESCRIPTIVE STATISTICS -----------------------------
+
+descriptive_results <- dplyr::bind_rows(
+  lapply(names(samples), function(s) {
+
+    df <- samples[[s]]
+
+    df %>%
+      dplyr::group_by(us_group) %>%
+      dplyr::summarise(
+        n = dplyr::n(),
+        licensing_mean = mean(licensing, na.rm = TRUE),
+        licensing_median = median(licensing, na.rm = TRUE),
+        licensing_sd = sd(licensing, na.rm = TRUE),
+        non_licensing_mean = mean(
+          non_licensing_readiness,
+          na.rm = TRUE
+        ),
+        non_licensing_median = median(
+          non_licensing_readiness,
+          na.rm = TRUE
+        ),
+        non_licensing_sd = sd(
+          non_licensing_readiness,
+          na.rm = TRUE
+        ),
+        .groups = "drop"
+      ) %>%
+      dplyr::mutate(
+        sample = s,
+        .before = 1
+      )
+  })
+)
+
+
+# 15. LICENSING SCORE DISTRIBUTIONS -------------------------------
+
+score_distributions <- dplyr::bind_rows(
+  lapply(names(samples), function(s) {
+
+    df <- samples[[s]]
+
+    df <- df[
+      !is.na(df$licensing),
+      ,
+      drop = FALSE
+    ]
+
+    df %>%
+      dplyr::count(
+        us_group,
+        licensing,
+        name = "n"
+      ) %>%
+      tidyr::complete(
+        us_group,
+        licensing = 1:6,
+        fill = list(n = 0)
+      ) %>%
+      dplyr::group_by(us_group) %>%
+      dplyr::mutate(
+        share = n / sum(n)
+      ) %>%
+      dplyr::ungroup() %>%
+      dplyr::mutate(
+        sample = s,
+        .before = 1
+      )
+  })
+)
+
+
+# 16. PANEL C: MODEL DIAGNOSTICS ----------------------------------
+
+panel_c <- regression_results %>%
+  dplyr::select(
+    sample,
+    model,
+    lr_statistic,
+    lr_df,
+    p_lr,
+    mcfadden_r2
+  ) %>%
+  dplyr::distinct()
+
+
+# 17. DESIGN-LEVEL AUDIT ------------------------------------------
+
+design_audit <- dat %>%
+  dplyr::select(
+    design,
+    country,
+    region,
+    us_group,
+    microreactor,
+    is_microreactor,
+    licensing,
+    financing,
+    supply_chain,
+    fuel_supply,
+    siting,
+    stakeholder_engagement,
+    non_licensing_readiness,
+    other_five_complete,
+    model_complete,
+    sample_inclusion
+  )
+
+
+# 18. EXCEL WORKBOOK ----------------------------------------------
+
+excel_tables <- list(
+  "S16 Panel A" = us_effect_summary,
+  "S16 Panel B" = descriptive_results,
+  "S16 Panel C" = panel_c,
+  "Nested LR tests" = model_comparison,
+  "OR change" = us_effect_wide,
+  "All coefficients" = regression_results,
+  "Licensing distributions" = score_distributions,
+  "Model diagnostics" = model_diagnostics,
+  "Sample counts" = sample_counts,
+  "Design audit" = design_audit
+)
+
 wb <- openxlsx::createWorkbook()
-header <- openxlsx::createStyle(textDecoration = 'bold', fgFill = '#DCE6F1')
-for (nm in names(sheets_out)) {
-  openxlsx::addWorksheet(wb, nm)
-  openxlsx::writeData(wb, nm, as.data.frame(sheets_out[[nm]]),
-                      headerStyle = header, withFilter = nrow(sheets_out[[nm]]) > 0)
-  openxlsx::setColWidths(wb, nm, cols = seq_len(ncol(sheets_out[[nm]])), widths = 'auto')
-  openxlsx::freezePane(wb, nm, firstRow = TRUE)
+
+header_style <- openxlsx::createStyle(
+  textDecoration = "bold",
+  fgFill = "#DCE6F1"
+)
+
+for (sheet in names(excel_tables)) {
+
+  tab <- as.data.frame(excel_tables[[sheet]])
+
+  openxlsx::addWorksheet(wb, sheet)
+
+  openxlsx::writeData(
+    wb,
+    sheet,
+    tab,
+    headerStyle = header_style,
+    withFilter = nrow(tab) > 0
+  )
+
+  openxlsx::setColWidths(
+    wb,
+    sheet,
+    cols = seq_len(ncol(tab)),
+    widths = "auto"
+  )
+
+  openxlsx::freezePane(
+    wb,
+    sheet,
+    firstRow = TRUE
+  )
 }
-openxlsx::saveWorkbook(wb, out_file, overwrite = TRUE)
-cat('\nS16 US effects:\n'); print(us_effect[, c('sample', 'model', 'n_total',
-                                                'n_us', 'n_non_us', 'odds_ratio', 'ci_low_95', 'ci_high_95', 'p_wald')])
-cat('\nNested-model tests:\n'); print(comparison)
-cat('\nSaved: ', out_file, '\n', sep = '')
+
+openxlsx::saveWorkbook(
+  wb,
+  output_file,
+  overwrite = TRUE
+)
+
+
+# 19. PRINT RESULTS -----------------------------------------------
+
+cat("\n")
+cat("====================================================\n")
+cat("SUPPLEMENTARY TABLE S16\n")
+cat("US VERSUS NON-US LICENSING READINESS\n")
+cat("====================================================\n")
+
+cat("\nPANEL A: US EFFECTS\n")
+print(as.data.frame(us_effect_summary), row.names = FALSE)
+
+cat("\nPANEL B: DESCRIPTIVE STATISTICS\n")
+print(as.data.frame(descriptive_results), row.names = FALSE)
+
+cat("\nPANEL C: MODEL DIAGNOSTICS\n")
+print(as.data.frame(panel_c), row.names = FALSE)
+
+cat("\nNESTED-MODEL COMPARISONS\n")
+print(as.data.frame(model_comparison), row.names = FALSE)
+
+cat("\nMODEL CONVERGENCE\n")
+print(as.data.frame(model_diagnostics), row.names = FALSE)
+
+cat("\nOUTPUT FILE:\n")
+cat(output_file, "\n")
+
+cat("\nAnalysis complete.\n")
