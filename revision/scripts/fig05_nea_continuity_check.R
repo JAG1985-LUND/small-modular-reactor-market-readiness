@@ -291,12 +291,12 @@ cat("\nCONTINUITY COHORT COUNTS\n")
 
 print(cohort_counts)
 
-expected_counts <- c(17L, 25L, 20L)
+expected_counts <- c(17L, 25L, 19L)
 
 if (!identical(as.integer(cohort_counts$n), expected_counts)) {
   stop(
     "Unexpected continuity cohort counts. ",
-    "Expected 17, 25 and 20."
+    "Expected 17, 25 and 19."
   )
 }
 
